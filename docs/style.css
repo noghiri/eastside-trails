@@ -39,7 +39,8 @@ header h1 { margin: 16px 0 2px; font-size: 1.5rem; }
 .sub, .muted { color: var(--ink-2); margin: 0 0 12px; }
 
 .filters { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-end; padding: 10px 0; border-block: 1px solid var(--line); }
-fieldset { border: 0; margin: 0; padding: 0; }
+fieldset { border: 0; margin: 0; padding: 0; min-inline-size: 0; }
+select { max-width: 100%; }
 legend { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); padding: 0; margin-bottom: 4px; }
 .seg { display: flex; }
 .seg label { border: 1px solid var(--line); padding: 4px 10px; cursor: pointer; background: var(--surface); }
@@ -54,8 +55,9 @@ legend { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .04em; c
 .checks label { display: block; }
 input, select { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
 
-main { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 16px; padding-block: 12px; }
-@media (max-width: 800px) { main { grid-template-columns: 1fr; } .detail { order: -1; } }
+main { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 16px; padding-block: 12px; }
+main > * { min-width: 0; }
+@media (max-width: 800px) { main { grid-template-columns: minmax(0, 1fr); } .detail { order: -1; } }
 .list { max-height: calc(100vh - 220px); overflow-y: auto; }
 @media (max-width: 800px) { .list { max-height: none; } }
 #rides { list-style: none; margin: 0; padding: 0; }
