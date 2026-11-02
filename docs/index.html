@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Eastside Trails</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Eastside Trails</h1>
+  <p class="sub">Easy bike rides (paved or groomed gravel) within 30 mi of Newcastle, WA. Pick a parking spot, and the site works out how far you can go without exceeding your grade limit.</p>
+</header>
+
+<section class="filters" aria-label="Ride filters">
+  <fieldset class="seg">
+    <legend>Mode</legend>
+    <label><input type="radio" name="mode" value="rt" checked> Round trip</label>
+    <label><input type="radio" name="mode" value="ow"> One-way</label>
+  </fieldset>
+  <fieldset class="seg">
+    <legend>Max grade</legend>
+    <label><input type="radio" name="grade" value="2"> ≤2%</label>
+    <label><input type="radio" name="grade" value="4" checked> ≤4%</label>
+    <label><input type="radio" name="grade" value="6"> ≤6%</label>
+    <label><input type="radio" name="grade" value="99"> Any</label>
+  </fieldset>
+  <fieldset class="len">
+    <legend>Ride length (mi)</legend>
+    <label>Min <input type="number" id="minLen" value="2" min="0" step="0.5"></label>
+    <label>Max <input type="number" id="maxLen" value="10" min="0.5" step="0.5"></label>
+  </fieldset>
+  <fieldset>
+    <legend>Surface</legend>
+    <select id="surface">
+      <option value="any">Any (unverified flagged)</option>
+      <option value="groomed">Paved + groomed gravel</option>
+      <option value="paved">Paved only</option>
+    </select>
+  </fieldset>
+  <fieldset class="checks">
+    <legend>Avoid</legend>
+    <label><input type="checkbox" id="avoidDismount" checked> Dismount sections</label>
+    <label><input type="checkbox" id="avoidRoad"> On-street sections</label>
+  </fieldset>
+  <fieldset>
+    <legend>Sort</legend>
+    <select id="sort">
+      <option value="grade">Gentlest first</option>
+      <option value="near">Nearest to Newcastle</option>
+      <option value="long">Longest first</option>
+    </select>
+  </fieldset>
+</section>
+
+<main>
+  <section class="list" aria-label="Rides">
+    <p id="count" class="muted"></p>
+    <ol id="rides"></ol>
+  </section>
+  <section class="detail">
+    <div id="map" role="region" aria-label="Map"></div>
+    <div id="ride" hidden></div>
+  </section>
+</main>
+
+<footer>
+  <p>Map data and trail geometry © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> (ODbL).
+  Elevation: <a href="https://www.usgs.gov/3d-elevation-program">USGS 3DEP</a> (public domain).
+  Trail info from the managing authorities, linked per trail. Conditions change: check the authority's page before you go.
+  <a href="https://github.com/noghiri/eastside-trails">Source</a>.</p>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
