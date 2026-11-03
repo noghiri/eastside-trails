@@ -17,6 +17,7 @@ import sys
 import classify
 import geo
 import net
+import parking
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "net"
@@ -164,6 +165,7 @@ def main(region="newcastle"):
                     "pass": None, "pass_source": None, "lot_osm": p["osm"], "capacity": None,
                     "notes": "Trailhead mapped in OpenStreetMap; parking and rules not checked."})
 
+    curated_spots = []
     for name, info in curated["trails"].items():
         for a in info.get("access", []):
             pt = locate(a["locate"], pois_by_id, roads, trail_grids.get(name))
@@ -177,7 +179,9 @@ def main(region="newcastle"):
             elif "latlon" in a["locate"]:
                 lot = None
             else:
-                near = [p for p in pois if p["kind"] == "parking" and geo.dist(pt, (p["lat"], p["lon"])) <= 150]
+                # never attach a business or private lot to a street-defined access point
+                near = [p for p in pois if p["kind"] == "parking" and geo.dist(pt, (p["lat"], p["lon"])) <= 150
+                        and p["tags"].get("access") not in parking.EXCLUDED_ACCESS]
                 lot = min(near, key=lambda p: geo.dist(pt, (p["lat"], p["lon"])), default=None)
             spot = (lot["lat"], lot["lon"]) if lot else pt
             d, nid = trail_node_grids[name].nearest(*spot, ACCESS_RADIUS) if name in trail_node_grids else (None, None)
@@ -188,6 +192,7 @@ def main(region="newcastle"):
                 continue
             lt = lot["tags"] if lot else {}
             osm_addr = " ".join(filter(None, [lt.get("addr:housenumber"), lt.get("addr:street"), lt.get("addr:city")]))
+            curated_spots.append(spot)
             tiles.setdefault(tile_of(*spot), {"edges": [], "pois": [], "access": []})["access"].append({
                 "name": a["name"], "trail": name, "lat": round(spot[0], 6), "lon": round(spot[1], 6), "node": nid,
                 "address": a.get("address") or osm_addr or None,
@@ -195,6 +200,27 @@ def main(region="newcastle"):
                 "source": a["source"], "verified": a.get("verified", True),
                 "pass": a.get("pass"), "pass_source": a.get("pass_source"),
                 "lot_osm": lot["osm"] if lot else a["locate"].get("osm"), "capacity": lt.get("capacity"), "notes": a.get("notes")})
+
+    # parking found automatically (parking.py); curated points nearby take precedence
+    auto_path = ROOT / "cache" / f"autoparking-{region}.json"
+    for c in json.loads(auto_path.read_text()) if auto_path.exists() else []:
+        if any(geo.dist((c["lat"], c["lon"]), sp) < 300 for sp in curated_spots):
+            continue
+        nid = min((n for n in c["nodes"] if n in node_xy), key=lambda n: geo.dist(node_xy[n], (c["lat"], c["lon"])), default=None)
+        if nid is None:
+            continue
+        trail = None if c["trail"].startswith("park:") else c["trail"]
+        label = c["lot_name"] or (f"{c['park']} parking" if c["park"] else f"Parking by {trail}" if trail else "Park parking")
+        tiles.setdefault(tile_of(c["lat"], c["lon"]), {"edges": [], "pois": [], "access": []})["access"].append({
+            "name": label, "trail": trail, "lat": c["lat"], "lon": c["lon"], "node": nid,
+            "address": None, "address_source": None, "source": "osm", "verified": False,
+            "pass": "discover" if c.get("fee") and "discover" in c["fee"].lower() else None,
+            "pass_source": "osm" if c.get("fee") and "discover" in c["fee"].lower() else None,
+            "lot_osm": c["osm"], "capacity": c.get("capacity"), "tier": c["tier"],
+            "notes": ("Found automatically from OpenStreetMap: " +
+                      ("a public lot in or beside a park or trail." if c["tier"] == "likely"
+                       else "an unnamed lot right beside the trail; it may belong to a business. Check signs.")
+                      + (" Park & ride: transit rules may apply." if c.get("park_ride") else ""))})
 
     (OUT / "t").mkdir(parents=True, exist_ok=True)
     for old in (OUT / "t").glob("*.json"):

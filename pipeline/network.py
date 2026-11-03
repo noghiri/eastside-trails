@@ -128,8 +128,51 @@ def pois(region="newcastle"):
     print(len(out), "pois ->", path)
 
 
+PARK_KINDS = {("leisure", "park"), ("leisure", "nature_reserve"), ("boundary", "protected_area"),
+              ("leisure", "recreation_ground")}
+
+
+def areas(region="newcastle"):
+    """Parking lots and parks as areas, including multipolygon relations (which `pois` misses).
+
+    Output cache/areas-<region>.json: {"parking": [{osm, lat, lon, tags}], "parks": [{osm, name, rings}]}
+    """
+    s, w, n, e = bbox(**REGIONS[region])
+    parking, parks = [], []
+    fp = (osmium.FileProcessor(str(PBF))
+          .with_areas(osmium.filter.KeyFilter("amenity", "leisure", "boundary"))
+          .with_filter(osmium.filter.EntityFilter(osmium.osm.AREA)))
+    for a in fp:
+        tags = dict(a.tags)
+        is_parking = tags.get("amenity") == "parking"
+        is_park = any(tags.get(k) == v for k, v in PARK_KINDS)
+        if not (is_parking or is_park):
+            continue
+        rings = [[(p.lat, p.lon) for p in ring if p.location.valid()] for ring in a.outer_rings()]
+        rings = [r for r in rings if len(r) >= 3]
+        if not rings:
+            continue
+        pts = [p for r in rings for p in r]
+        lat, lon = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+        if not (s <= lat <= n and w <= lon <= e):
+            continue
+        osm = f"{'way' if a.from_way() else 'relation'}/{a.orig_id()}"
+        if is_parking:
+            parking.append({"osm": osm, "lat": round(lat, 6), "lon": round(lon, 6),
+                            "ring": [[round(p[0], 6), round(p[1], 6)] for p in rings[0]],
+                            "tags": {k: v for k, v in tags.items() if k in POI_TAGS | {"park_ride", "operator:type"}}})
+        if is_park:
+            parks.append({"osm": osm, "name": tags.get("name"), "operator": tags.get("operator"),
+                          "rings": [[[round(p[0], 6), round(p[1], 6)] for p in r] for r in rings]})
+    path = ROOT / "cache" / f"areas-{region}.json"
+    path.write_text(json.dumps({"parking": parking, "parks": parks}))
+    print(len(parking), "parking areas,", len(parks), "parks ->", path)
+
+
 if __name__ == "__main__":
-    if sys.argv[1:2] == ["pois"]:
+    if sys.argv[1:2] == ["areas"]:
+        areas(*sys.argv[2:])
+    elif sys.argv[1:2] == ["pois"]:
         pois(*sys.argv[2:])
     else:
         main(*sys.argv[1:])

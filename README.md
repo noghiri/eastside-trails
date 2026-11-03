@@ -45,11 +45,13 @@ cd pipeline
 # Geofabrik Washington extract -> cache/geofabrik/washington-latest.osm.pbf
 python network.py        # all highways in the region, split at junctions
 python network.py pois   # toilets, water, viewpoints, trailheads, parking
+python network.py areas  # parking lots and parks as areas (incl. multipolygons)
 python prune.py          # paths + short road connectors + joins across tiny unmapped gaps
 python elevate.py split  # per-area batches
 python elevate.py run    # resumable; 1 m lidar for bike-relevant edges, 10 m elsewhere
 python elevate.py merge  # bridge handling (levelled approaches, chained spans)
 python validate.py       # compare against the pilot trails
+python parking.py        # trail parking found automatically (unverified, likely/possible tiers)
 python tiles.py          # docs/net/index.json + 0.1-degree tiles
 ```
 
@@ -60,6 +62,8 @@ Elevation blocks are read from USGS 3DEP cloud-optimized GeoTIFFs and cached und
 
 - Elevation models show the ground under bridges. Bridges tagged in OSM are interpolated;
   untagged bridges and culvert fills can show up as false V-shaped dips.
-- OSM parking near trails is too noisy to use directly; parking points come from the
-  curated list, with OSM used only to locate the lot.
+- Parking: curated points come from the managing authorities. Other trail parking is found
+  automatically from OSM (`parking.py`): public lots in or beside parks or with trail/park
+  names ("likely"), or unnamed lots right beside a long trail ("possible"). Both are marked
+  unverified; on the pilot trails it rediscovers 13 of 16 curated lots.
 - Closures change. Always check the authority's page before a ride.

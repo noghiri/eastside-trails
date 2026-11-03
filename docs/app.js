@@ -202,7 +202,7 @@ function badges(r) {
   if (kinds.has("viewpoint")) b.push(`<span class="badge">viewpoint</span>`);
   const a = ACCESS[r.start];
   if (a.pass === "discover" || ACCESS[r.end]?.pass === "discover") b.push(`<span class="badge warn">Discover Pass</span>`);
-  if (!a.verified) b.push(`<span class="badge warn">parking unverified</span>`);
+  if (!a.verified) b.push(`<span class="badge warn">${a.tier === "possible" ? "parking possible, unverified" : "parking unverified"}</span>`);
   return b.join("");
 }
 

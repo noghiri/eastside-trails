@@ -67,6 +67,31 @@
       "title": "Washington State Parks: Lake Sammamish State Park",
       "url": "https://parks.wa.gov/find-parks/state-parks/lake-sammamish-state-park",
       "checked": "2026-11-02"
+    },
+    "kc-eastrail": {
+      "title": "King County: Eastrail",
+      "url": "https://kingcounty.gov/en/dept/dnrp/nature-recreation/parks-recreation/king-county-parks/trails/leafline-trails/eastrail",
+      "checked": "2026-11-03"
+    },
+    "kc-eastrail-proj": {
+      "title": "King County: Eastrail project",
+      "url": "https://kingcounty.gov/en/dept/dnrp/nature-recreation/parks-recreation/king-county-parks/capital-projects/eastrail",
+      "checked": "2026-11-03"
+    },
+    "kirkland-ckc": {
+      "title": "City of Kirkland: Cross Kirkland Corridor",
+      "url": "https://www.kirklandwa.gov/Government/Departments/Public-Works-Department/Cross-Kirkland-Corridor",
+      "checked": "2026-11-03"
+    },
+    "kirkland-ckc-closures": {
+      "title": "City of Kirkland: Cross Kirkland Corridor closures",
+      "url": "https://www.kirklandwa.gov/Government/Departments/Public-Works-Department/Cross-Kirkland-Corridor/Cross-Kirkland-Corridor-Closures",
+      "checked": "2026-11-03"
+    },
+    "bellevue-ncbp": {
+      "title": "City of Bellevue: Newcastle Beach Park",
+      "url": "https://parks.bellevuewa.gov/parks-and-trails/parks/newcastle-beach-park/",
+      "checked": "2026-11-03"
     }
   },
   "trails": {
@@ -431,6 +456,74 @@
           "notes": "Large beach lot (OSM: 1,200 spaces, Discover Pass required). Address shown is the park's address. Park hours 6:30 a.m. to dusk."
         }
       ]
+    },
+    "Eastrail": {
+      "authority": "King County Parks (with partner cities)",
+      "authority_url": "https://kingcounty.gov/en/dept/dnrp/nature-recreation/parks-recreation/king-county-parks/trails/leafline-trails/eastrail",
+      "wta_url": null,
+      "surface_summary": "Mixed paved and gravel sections; King County doesn't publish a section-by-section surface list, so per-section surface comes from OpenStreetMap.",
+      "surface_sources": [
+        "kc-eastrail",
+        "osm"
+      ],
+      "ebike": "Class 1 and 2 allowed on King County regional trails, 15 mph limit (kc-rules).",
+      "notes": [
+        {
+          "kind": "closure",
+          "text": "Wilburton Trestle under construction since May 2024; anticipated opening mid-2027.",
+          "source": "kc-eastrail-proj"
+        },
+        {
+          "kind": "note",
+          "text": "Central Wilburton segment (0.65 mi, NE 8th St bridge to the trestle) will open as an interim gravel trail, anticipated 2027.",
+          "source": "kc-eastrail-proj"
+        },
+        {
+          "kind": "gap",
+          "text": "The I-90 crossing is the final gap in the southern segment; anticipated opening 2031.",
+          "source": "kc-eastrail-proj"
+        }
+      ],
+      "access": [
+        {
+          "name": "Newcastle Beach Park",
+          "address": "4400 Lake Washington Blvd SE, Bellevue, WA 98006",
+          "address_source": "bellevue-ncbp",
+          "source": "bellevue-ncbp",
+          "locate": {
+            "osm": "way/344400723"
+          },
+          "notes": "City park lot about 200 m from Eastrail. Parking is limited and first-come; designated lots only (City of Bellevue). Restrooms and beach in the park."
+        }
+      ]
+    },
+    "Cross Kirkland Corridor": {
+      "authority": "City of Kirkland",
+      "authority_url": "https://www.kirklandwa.gov/Government/Departments/Public-Works-Department/Cross-Kirkland-Corridor",
+      "wta_url": null,
+      "surface_summary": "Ten-foot-wide crushed gravel interim trail, South Kirkland Park & Ride to Totem Lake; paving is planned in the master plan but not built.",
+      "surface_sources": [
+        "kirkland-ckc"
+      ],
+      "untagged_surface": "groomed",
+      "authority_surface_over": [
+        "gravel",
+        "unpaved"
+      ],
+      "ebike": "Electric-assisted bicycles allowed; 15 mph speed limit (kirkland-ckc).",
+      "notes": [
+        {
+          "kind": "closure",
+          "text": "Closed between NE 52nd St and 108th Ave NE for King County culvert repair, starting as early as Sept. 8, 2026, for about three months; detour available.",
+          "source": "kirkland-ckc-closures"
+        },
+        {
+          "kind": "note",
+          "text": "Part of Eastrail.",
+          "source": "kirkland-ckc"
+        }
+      ],
+      "access": []
     }
   }
 }
