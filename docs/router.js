@@ -12,6 +12,7 @@ const RES = 10, WIN = 10, APPROACH_M = 250, MIN_RIDE_M = 300, SHORT_LINK_M = 30,
 let E = [];          // edges
 let nodeIdx = new Map(), NX = [], ADJ = []; // node id -> index, coords, adjacency [{k, dir}]
 let ACCESS = [], POIS = [], INFO = null;
+const NODE_ID = [];
 const poiByNode = new Map();
 
 // ---------- loading ----------
@@ -85,6 +86,9 @@ async function load(center, radiusMi) {
     done += batch.length;
     postMessage({ type: "progress", text: `Loading map data ${done}/${want.length}` });
   }
+  // adjacency order must not depend on tile fetch order: short ride links count choices in it
+  for (const list of ADJ) list.sort((x, y) => E[x.k].id - E[y.k].id || x.dir - y.dir);
+  for (const [id, k] of nodeIdx) NODE_ID[k] = id;
   for (const p of POIS) {
     const k = nodeIdx.get(p.node);
     if (k !== undefined) { if (!poiByNode.has(k)) poiByNode.set(k, []); poiByNode.get(k).push(p); }
@@ -456,8 +460,9 @@ function jaccard(a, b) {
   return inter / (a.size + b.size - inter);
 }
 
+// "r" marks a reversed edge; edge ids themselves can be negative (unmapped joins)
 function encode(route) {
-  return route.map((h) => `${h.dir === 1 ? "" : "-"}${E[h.k].id}${h.part ? "~" + Math.round(h.part) : ""}`).join(".");
+  return route.map((h) => `${h.dir === 1 ? "" : "r"}${E[h.k].id}${h.part ? "~" + Math.round(h.part) : ""}`).join(".");
 }
 
 /** Nearest node within APPROACH_M of k (over any non-closed, non-private edge) that has a usable edge. */
@@ -612,19 +617,89 @@ function detail(r) {
     poiList: r._pois, grade10: Array.from(r._ele) };
 }
 
-function decodeRoute(code) {
-  const [, path] = code.split(":");
-  const byId = new Map(E.map((e, k) => [e.id, k]));
-  const out = [];
-  for (const tok of path.split(".")) {
-    const m = /^(-?)(-?\d+)(?:~(\d+))?$/.exec(tok);
-    if (!m) return null;
-    const k = byId.get(Number(m[2]));
-    if (k === undefined) return null;
-    out.push({ k, dir: m[1] ? -1 : 1, part: m[3] ? Number(m[3]) : undefined });
+// ---------- short ride links ----------
+// <access node>[~<start node>].<shape><edge count>.<turns>[.<partial m>], base36 throughout.
+// Only junctions with more than one way onward cost a character, so trail rides stay short.
+const B36 = (n) => n.toString(36);
+const SHAPE_CODE = { "out-and-back": "o", loop: "l", lollipop: "p", "one-way": "w" };
+const SHAPE_NAME = Object.fromEntries(Object.entries(SHAPE_CODE).map(([k, v]) => [v, k]));
+
+function onward(n, prev) {
+  return ADJ[n].filter((h) => !prev || h.k !== prev.k);
+}
+
+function shortCode(route, accessNode, shape) {
+  const half = shape === "out-and-back" ? route.slice(0, route.length / 2) : route;
+  let at = half[0].dir === 1 ? E[half[0].k].a : E[half[0].k].b;
+  const startId = NODE_ID[at];
+  let turns = "", prev = null;
+  for (const h of half) {
+    const opts = onward(at, prev);
+    const i = opts.findIndex((x) => x.k === h.k && x.dir === h.dir);
+    if (i < 0) return null;
+    if (opts.length > 1) turns += i < 35 ? B36(i) : "z" + B36(i).padStart(2, "0");
+    prev = h;
+    at = h.dir === 1 ? E[h.k].b : E[h.k].a;
   }
-  // a partial edge followed later by the same edge reversed is the return leg of an out-and-back
-  for (let i = 0; i < out.length; i++) if (out[i].part && out[i - 1]?.k === out[i].k) out[i].partFromEnd = true;
+  const last = half[half.length - 1];
+  return `${B36(accessNode)}${startId !== accessNode ? "~" + B36(startId) : ""}.${SHAPE_CODE[shape]}${B36(half.length)}.${turns}` +
+    (last.part ? `.${B36(Math.round(last.part))}` : "");
+}
+
+function decodeShort(code) {
+  const m = /^([0-9a-z]+)(?:~([0-9a-z]+))?\.([olpw])([0-9a-z]+)\.([0-9a-z]*)(?:\.([0-9a-z]+))?$/.exec(code);
+  if (!m) return null;
+  let at = nodeIdx.get(parseInt(m[2] || m[1], 36));
+  if (at === undefined) return null;
+  const shape = SHAPE_NAME[m[3]], count = parseInt(m[4], 36), turns = m[5];
+  const route = [];
+  let prev = null, t = 0;
+  for (let i = 0; i < count; i++) {
+    const opts = onward(at, prev);
+    let idx = 0;
+    if (opts.length > 1) {
+      if (t >= turns.length) return null;
+      if (turns[t] === "z") { idx = parseInt(turns.slice(t + 1, t + 3), 36); t += 3; } else idx = parseInt(turns[t++], 36);
+    }
+    const h = opts[idx];
+    if (!h) return null;
+    route.push({ k: h.k, dir: h.dir });
+    prev = h;
+    at = h.dir === 1 ? E[h.k].b : E[h.k].a;
+  }
+  if (t !== turns.length) return null;
+  if (m[6]) route[route.length - 1].part = parseInt(m[6], 36);
+  const full = shape === "out-and-back" ? route.concat(reverseRoute(route)) : route;
+  return { route: full, shape, accessNode: parseInt(m[1], 36) };
+}
+
+function decodeRoute(code) {
+  const [startNode, path] = code.split(":");
+  const byId = new Map(E.map((e, k) => [e.id, k]));
+  const end = (h) => (h.dir === 1 ? E[h.k].b : E[h.k].a);
+  const begin = (h) => (h.dir === 1 ? E[h.k].a : E[h.k].b);
+  const out = [];
+  let at = nodeIdx.get(Number(startNode));
+  for (const tok of path.split(".")) {
+    // current form: [r]id[~part]; older links used a leading "-" for reversed, which is
+    // ambiguous for negative ids, so try each reading and keep the one that connects
+    const m = /^(r?)(-?-?\d+)(?:~(\d+))?$/.exec(tok);
+    if (!m) return null;
+    const part = m[3] ? Number(m[3]) : undefined;
+    const readings = m[1] ? [[Number(m[2]), -1]]
+      : m[2].startsWith("--") ? [[Number(m[2].slice(1)), -1]]
+      : m[2].startsWith("-") ? [[Number(m[2]), 1], [Number(m[2].slice(1)), -1]]
+      : [[Number(m[2]), 1]];
+    const opts = readings.filter(([id]) => byId.has(id)).map(([id, dir]) => ({ k: byId.get(id), dir, part }));
+    // a partial edge followed by its reverse is an out-and-back turnaround: it starts mid-edge
+    const prev = out[out.length - 1];
+    // the first edge may start a short walk from the parking node (see startNode)
+    const h = opts.find((x) => (prev?.part && prev.k === x.k) || begin(x) === at) || (out.length ? null : opts[0] || null);
+    if (!h) return null;
+    if (prev?.part && prev.k === h.k) h.partFromEnd = true;
+    out.push(h);
+    at = end(h);
+  }
   return out;
 }
 
@@ -652,11 +727,19 @@ onmessage = async (ev) => {
     if (m.diag) m.opts.diag = [];
     postMessage({ type: "from", access: m.access, rides: ridesFrom(ACCESS[m.access], m.opts).map(summary), diag: m.opts.diag });
   } else if (m.type === "detail") {
-    const route = decodeRoute(m.code);
-    if (!route) return postMessage({ type: "detail", error: "Ride not found in loaded data" });
-    const a = ACCESS.find((x) => String(x.node) === m.code.split(":")[0]);
-    const r = evaluate(route, m.opts, { shape: m.shape, why: m.why, start: a?.idx, end: m.end });
-    r.code = m.code;
+    let route, shape = m.shape, accessNode;
+    if (m.short) {
+      const d = decodeShort(m.short);
+      if (d) ({ route, shape, accessNode } = d);
+    } else {
+      route = decodeRoute(m.code);
+      accessNode = Number(m.code.split(":")[0]);
+    }
+    if (!route) return postMessage({ type: "detail", error: "This ride link doesn't match the current map data (the map may have been updated since it was made)." });
+    const a = ACCESS.find((x) => x.node === accessNode);
+    const r = evaluate(route, m.opts, { shape, why: m.why, start: a?.idx, end: m.end });
+    r.code = `${accessNode}:${encode(route)}`;
+    r.short = shortCode(route, accessNode, shape);
     postMessage({ type: "detail", ride: detail(r) });
   }
 };

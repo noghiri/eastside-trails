@@ -14,6 +14,8 @@ const tierColor = (k) => css(`--g${k + 1}`);
 
 let map, baseLayer, rideLayer, worker;
 let ACCESS = [], INFO = null, rides = [], gen = 0, selectedCode = null;
+const PAGE = 100;
+let shown = PAGE;
 let center = NEWCASTLE, centerName = "Newcastle";
 
 // ---------- setup ----------
@@ -67,14 +69,12 @@ function onWorker(ev) {
     INFO = m.info;
     drawBase(m.closures);
     generate();
+    const want = parseHash();
+    if (want?.short || want?.c) requestDetail(want);
   } else if (m.type === "rides") {
     if (m.gen !== gen) return;
     rides.push(...m.rides);
     renderList(m.done < m.total ? `${m.done}/${m.total} parking spots checked…` : null);
-    if (m.done === m.total) {
-      const want = parseHash();
-      if (want?.c && want.c !== selectedCode) requestDetail(want);
-    }
   } else if (m.type === "detail") {
     if (m.error) { $("#count").textContent = m.error; return; }
     showDetail(m.ride);
@@ -120,12 +120,20 @@ function applyFilters(o) {
   if (o.sort) $("#sort").value = o.sort;
 }
 
+/** Short form: #r=<ride>&g=<grade>[&w=<walk m>]; older links carry a JSON object. */
 function parseHash() {
-  try { return JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch (e) { return null; }
+  const h = location.hash.slice(1);
+  if (h.startsWith("r=")) {
+    const q = new URLSearchParams(h);
+    const o = { ...opts(), grade: +q.get("g") || 4, walk: q.has("w"), walkMax: +q.get("w") || 200 };
+    return { short: q.get("r"), o };
+  }
+  try { return JSON.parse(decodeURIComponent(h)); } catch (e) { return null; }
 }
 
 function generate() {
   gen++;
+  shown = PAGE;
   rides = [];
   $("#rides").innerHTML = "";
   $("#ride").hidden = true;
@@ -152,9 +160,11 @@ function renderList(progress) {
     ? `${rides.length} ride${rides.length === 1 ? "" : "s"}. Distances are straight-line from ${centerName}.`
     : progress ? "" : "No rides match. Try a higher grade limit, a shorter minimum, or allowing walk-ups.") + (progress ? ` ${progress}` : "");
   const ol = $("#rides");
-  ol.innerHTML = rides.slice(0, 200).map((r, k) =>
-    `<li tabindex="0" data-k="${k}" aria-selected="${r.code === selectedCode}">${rideSummary(r)}</li>`).join("");
-  ol.querySelectorAll("li").forEach((li) => {
+  ol.innerHTML = rides.slice(0, shown).map((r, k) =>
+    `<li tabindex="0" data-k="${k}" aria-selected="${r.code === selectedCode}">${rideSummary(r)}</li>`).join("") +
+    (rides.length > shown ? `<li class="more"><button type="button" class="btn ghost" id="moreBtn">Show more rides (${rides.length - shown} more)</button></li>` : "");
+  $("#moreBtn")?.addEventListener("click", () => { shown += PAGE; renderList(); });
+  ol.querySelectorAll("li[data-k]").forEach((li) => {
     const pick = () => select(rides[+li.dataset.k]);
     li.addEventListener("click", pick);
     li.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(); } });
@@ -237,11 +247,14 @@ function select(r) {
 }
 
 function requestDetail(w) {
-  selectedCode = w.c;
+  selectedCode = w.c || null;
+  worker.postMessage({ type: "detail", code: w.c, short: w.short, shape: w.shape, why: w.why, end: w.end, opts: opts() });
+}
+
+function shareUrl(r) {
   const o = opts();
-  history.replaceState(null, "", "#" + encodeURIComponent(JSON.stringify({ c: w.c, shape: w.shape, why: w.why, end: w.end, o,
-    center, centerName })));
-  worker.postMessage({ type: "detail", code: w.c, shape: w.shape, why: w.why, end: w.end, opts: o });
+  const q = `r=${r.short}&g=${o.grade}${o.walk ? `&w=${o.walkMax}` : ""}`;
+  return `${location.origin}${location.pathname}#${q}`;
 }
 
 function gradeAt(d, ride) {
@@ -326,6 +339,8 @@ function steepHtml(r) {
 }
 
 function showDetail(r) {
+  selectedCode = r.code;
+  if (r.short) history.replaceState(null, "", shareUrl(r));
   drawRide(r);
   const el = $("#ride");
   const climb = r.shape === "out-and-back"
@@ -342,13 +357,33 @@ function showDetail(r) {
     <div class="profile-wrap"><svg class="profile" role="img" aria-label="Elevation profile: ${(r.length / MI).toFixed(1)} miles, max grade ${r.maxG.toFixed(1)} percent"></svg><div class="tip" hidden></div></div>
     <div class="legend">${TIER_LABELS.map((l, k) => `<span class="tier"><span class="sw" style="background:${tierColor(k)}"></span>${l}</span>`).join("")}
       <span>Grade over 100 m, either direction.${r.shape === "out-and-back" ? " The dashed line marks the turnaround." : ""}</span></div>
-    <a class="btn" id="gpxBtn" href="#">Download ride GPX</a>
+    ${r.short ? `<button type="button" class="btn" id="shareBtn">Share this ride</button>` : ""}
+    <a class="btn ghost" id="gpxBtn" href="#">Download ride GPX</a>
+    <p class="muted" id="shareMsg" aria-live="polite"></p>
     <h3>Parking</h3>
     ${parkingHtml(ACCESS[r.start])}${r.end !== undefined && r.end !== null && ACCESS[r.end] ? parkingHtml(ACCESS[r.end]) : ""}
     ${trailInfoHtml(r)}`;
   el.hidden = false;
   drawProfile(r, el.querySelector(".profile"), el.querySelector(".tip"));
   $("#gpxBtn").addEventListener("click", (ev) => { ev.preventDefault(); downloadGpx(r); });
+  $("#shareBtn")?.addEventListener("click", () => shareRide(r));
+}
+
+async function shareRide(r) {
+  const a = ACCESS[r.start];
+  const title = `${rideTitle(r)}: ${SHAPE_TEXT[r.shape].toLowerCase()}, ${(r.length / MI).toFixed(1)} mi`;
+  const text = `${title}${a ? ` from ${a.name}` : ""}, max grade ${r.maxRide.toFixed(1)}%`;
+  const url = shareUrl(r);
+  if (navigator.share) {
+    try { await navigator.share({ title, text, url }); return; } catch (e) { if (e.name === "AbortError") return; }
+  }
+  try {
+    await navigator.clipboard.writeText(`${text}
+${url}`);
+    $("#shareMsg").textContent = "Link copied.";
+  } catch (e) {
+    $("#shareMsg").innerHTML = `Copy this link: <input type="text" readonly value="${esc(url)}" style="width:100%">`;
+  }
 }
 
 function niceStep(raw) {
