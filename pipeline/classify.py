@@ -21,7 +21,9 @@ FOOT_DEFAULT = {"cycleway": "yes", "path": "yes", "track": "yes", "bridleway": "
 
 # per-sample flag bits, shared with the site
 CLOSED, ROAD, DISMOUNT, BRIDGE = 1, 2, 4, 8
-SURFACES = ["paved", "groomed", "rough", "unknown"]
+# codes are positions in this list (shared with the site); "unknown" keeps code 3
+SURFACES = ["paved", "groomed", "gravel", "unknown", "dirt"]
+EASY_SURFACES = {"paved", "groomed", "unknown"}  # what easy-bike mode may use
 
 
 def _access(t, key, defaults):
@@ -59,6 +61,7 @@ def bike_oneway(t):
 
 
 VAGUE = {"unpaved"}  # says only "not paved": could be packed gravel or dirt
+LOOSE_GRAVEL = {"gravel", "pebblestone", "shells"}
 
 
 def surface(t):
@@ -69,14 +72,18 @@ def surface(t):
         return "paved"
     if s in GROOMED:
         return "groomed"
+    if s in LOOSE_GRAVEL:
+        return "gravel"
     if s:
-        return "rough"
+        return "dirt"  # dirt, ground, earth, grass, sand, rock, mud, woodchips, ...
     if t.get("highway") in ROADS and t.get("highway") != "service":
         return "paved"
     if t.get("tracktype") in ("grade1", "grade2"):
         return "groomed"
+    if t.get("tracktype") == "grade3":
+        return "gravel"
     if t.get("tracktype"):
-        return "rough"
+        return "dirt"
     return "unknown"
 
 

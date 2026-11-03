@@ -121,7 +121,7 @@ def main(region="newcastle"):
     # links are found twice: between parts of the whole path network, and between parts of the
     # easy-bike subset, whose parts may only be joined elsewhere by dirt paths (a paved park
     # path that meets the park road on both sides is the typical case)
-    easy = [e for e in paths if classify.bike(e["tags"])[0] != "no" and classify.surface(e["tags"]) != "rough"
+    easy = [e for e in paths if classify.bike(e["tags"])[0] != "no" and classify.surface(e["tags"]) in classify.EASY_SURFACES
             and not classify.flags(e["tags"]) & classify.CLOSED]
     for graph_comp, nodes in ((comp, path_nodes), (components(easy), {n for e in easy for n in (e["a"], e["b"])})):
         connect(radj, graph_comp, nodes, keep)

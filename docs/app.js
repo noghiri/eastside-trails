@@ -158,7 +158,8 @@ function renderList(progress) {
   rides.sort(sorters[sort]);
   $("#count").textContent = (rides.length
     ? `${rides.length} ride${rides.length === 1 ? "" : "s"}. Distances are straight-line from ${centerName}.`
-    : progress ? "" : "No rides match. Try a higher grade limit, a shorter minimum, or allowing walk-ups.") + (progress ? ` ${progress}` : "");
+    : progress ? "" : "No rides match. Try a higher grade limit, a shorter minimum, or allowing walk-ups.") + (progress ? ` ${progress}` : "") +
+    ($("#surface").value === "dirt" ? " Dirt rides don't check e-bike rules yet: most King County backcountry and DNR singletrack (e.g. Tiger Mountain, Raging River) is closed to e-bikes of every class." : "");
   const ol = $("#rides");
   ol.innerHTML = rides.slice(0, shown).map((r, k) =>
     `<li tabindex="0" data-k="${k}" aria-selected="${r.code === selectedCode}">${rideSummary(r)}</li>`).join("") +
@@ -199,8 +200,11 @@ function badges(r) {
     const word = $("#walk").checked && r.maxRide <= (+document.querySelector('input[name="grade"]:checked').value) ? "walk-up" : "steep spot";
     b.push(`<span class="badge warn">⚠ ${r.steep.length} ${word}${r.steep.length > 1 ? "s" : ""}, up to ${g.toFixed(1)}%</span>`);
   }
-  if (r.surf[1] > 0.05) b.push(`<span class="badge">${Math.round(r.surf[1] * 100)}% groomed gravel</span>`);
-  if (r.surf[2] + r.surf[3] > 0.05) b.push(`<span class="badge warn">surface unverified ${Math.round((r.surf[2] + r.surf[3]) * 100)}%</span>`);
+  const pct = (x) => Math.round(x * 100);
+  if (r.surf[1] > 0.05) b.push(`<span class="badge">${pct(r.surf[1])}% groomed gravel</span>`);
+  if (r.surf[2] > 0.05) b.push(`<span class="badge">${pct(r.surf[2])}% loose gravel</span>`);
+  if (r.surf[4] > 0.05) b.push(`<span class="badge">${pct(r.surf[4])}% dirt</span>`);
+  if (r.surf[3] > 0.05) b.push(`<span class="badge warn">surface not mapped ${pct(r.surf[3])}%</span>`);
   if (r.road > 20) b.push(`<span class="badge warn">on-street ${Math.round(r.road * FT)} ft</span>`);
   if (r.dismount > 0) b.push(`<span class="badge warn">dismount section</span>`);
   if (r.unconfirmed > 20) b.push(`<span class="badge warn">bike access not confirmed ${Math.round(r.unconfirmed * FT)} ft</span>`);

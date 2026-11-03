@@ -90,7 +90,7 @@ def main(region="newcastle"):
 
     # easy-bike edges that belong to a real trail or a park path network
     easy = [e for e in pruned["edges"] if e["cls"] == "path" and classify.bike(e["tags"])[0] != "no"
-            and classify.surface(e["tags"]) != "rough" and not classify.flags(e["tags"]) & classify.CLOSED]
+            and classify.surface(e["tags"]) in classify.EASY_SURFACES and not classify.flags(e["tags"]) & classify.CLOSED]
     named_len = {}
     for e in easy:
         if e["tags"].get("name"):

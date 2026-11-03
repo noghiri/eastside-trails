@@ -119,14 +119,37 @@ function usable(k, dir, o) {
   if ((e.bk === ACC.dismount || e.f & DISMOUNT || e.h === "steps") && o.avoidDismount) return false;
   if ((e.ow === 1 && dir === -1) || (e.ow === -1 && dir === 1)) return false;
   if (o.avoidRoad && e.f & ROAD) return false;
-  if (o.surface !== "any") {
-    if (e.s === 2) return false;
-    if (e.s === 1 && o.surface === "paved") return false;
-    // untagged paths are usually dirt, but very short ones are crossings and links between paths
-    if (e.s === 3 && !(UNKNOWN_SURFACE_OK.has(e.h) || e.c !== "path" || e.L < SHORT_LINK_M)) return false;
-  }
+  if (!surfaceOk(e, o.surface)) return false;
   if (!o.walk && e.L >= 100 && e.maxG > o.grade + 0.5) return false;
   return true;
+}
+
+// surface codes: 0 paved, 1 groomed gravel, 2 loose gravel, 3 untagged, 4 dirt
+const S_PAVED = 0, S_GROOMED = 1, S_GRAVEL = 2, S_UNKNOWN = 3, S_DIRT = 4;
+const TRAILISH = new Set(["path", "track", "bridleway"]);
+
+function surfaceOk(e, mode) {
+  if (mode === "any" || mode === "dirt") return true;
+  // untagged paths are usually dirt, but very short ones are crossings and links between paths
+  const unknownEasy = UNKNOWN_SURFACE_OK.has(e.h) || e.c !== "path" || e.L < SHORT_LINK_M;
+  if (e.s === S_UNKNOWN) return unknownEasy || (mode === "gravel" && e.h === "track");
+  if (mode === "paved") return e.s === S_PAVED;
+  if (mode === "groomed") return e.s === S_PAVED || e.s === S_GROOMED;
+  return e.s !== S_DIRT; // gravel
+}
+
+/** How much a gravel or dirt ride wants this edge (walks lean toward it). */
+function surfaceWant(e, mode) {
+  if (mode === "gravel") return e.s === S_GROOMED || e.s === S_GRAVEL ? 3 : 1;
+  if (mode === "dirt") return e.s === S_DIRT || (e.s === S_UNKNOWN && TRAILISH.has(e.h)) ? 3 : 1;
+  return 1;
+}
+
+/** Share of a ride on the surface a gravel or dirt ride is after (1 for other modes). */
+function targetShare(r, mode) {
+  if (mode === "gravel") return r.surf[S_GROOMED] + r.surf[S_GRAVEL];
+  if (mode === "dirt") return r.surf[S_DIRT] + r.trailUnknown / Math.max(r.length, 1);
+  return 1;
 }
 
 function cost(k) {
@@ -166,7 +189,7 @@ function walk(s, first, o, target, rng, greedy, needTwoWay) {
       if (!usable(nx.k, nx.dir, o) || (needTwoWay && !usable(nx.k, -nx.dir, o))) continue;
       const turn = Math.abs(((heading(nx.k, nx.dir, false) - h0 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
       const same = ce.n && E[nx.k].n === ce.n;
-      let w = Math.exp(-turn * 1.5) * (same ? 6 : 1) / (cost(nx.k) / Math.max(E[nx.k].L, 1));
+      let w = Math.exp(-turn * 1.5) * (same ? 6 : 1) * surfaceWant(E[nx.k], o.surface) / (cost(nx.k) / Math.max(E[nx.k].L, 1));
       opts.push({ nx, w, turn, same });
     }
     if (!opts.length) {
@@ -392,8 +415,8 @@ function evaluate(route, o, meta) {
   let climb = 0, climbHalf = 0;
   const half = Math.floor(ele.length / 2);
   for (let i = 1; i < ele.length; i++) { const u = Math.max(0, ele[i] - ele[i - 1]); climb += u; if (i <= half) climbHalf += u; }
-  const surf = [0, 0, 0, 0];
-  let road = 0, dismount = 0, unconfirmed = 0, onetenM = 0;
+  const surf = [0, 0, 0, 0, 0];
+  let road = 0, dismount = 0, unconfirmed = 0, onetenM = 0, trailUnknown = 0;
   for (let i = 1; i < sm.D.length; i++) {
     const step = sm.D[i] - sm.D[i - 1];
     surf[sm.S[i]] += step;
@@ -401,6 +424,7 @@ function evaluate(route, o, meta) {
     if (sm.F[i] & DISMOUNT || sm.H[i] === "steps") dismount += step;
     if (sm.BK[i] === ACC.unknown) unconfirmed += step;
     if (sm.R[i] === 10) onetenM += step;
+    if (sm.S[i] === S_UNKNOWN && TRAILISH.has(sm.H[i])) trailUnknown += step;
   }
   const names = new Map();
   const nodes = new Set();
@@ -422,7 +446,7 @@ function evaluate(route, o, meta) {
   return {
     ...meta, length: sm.total, climb, climbOut: meta.shape === "out-and-back" ? climbHalf : climb,
     climbBack: meta.shape === "out-and-back" ? climb - climbHalf : 0,
-    maxG, maxRide, steep, surf: surf.map((m) => m / span), road, dismount, unconfirmed, coarseElev: onetenM,
+    maxG, maxRide, steep, surf: surf.map((m) => m / span), road, dismount, unconfirmed, coarseElev: onetenM, trailUnknown,
     joins, retraced, uturns, names: rideNames(names),
     pois: pois.map((p) => p.k), _pois: pois, _sm: sm, _ele: ele,
   };
@@ -595,8 +619,10 @@ function ridesFrom(a, o) {
       if (!o.walk && r.maxG > o.grade) continue;
       if (o.walk && r.steep.some((x) => x.g > o.grade && x.len > o.walkMax)) continue;
     }
+    const share = targetShare(r, o.surface);
+    if (share < 0.5) continue; // a gravel or dirt ride should be mostly that
     r.edges = new Set(c.route.map((h) => h.k));
-    r.score = r.length / maxM - 0.08 * r.maxRide - 0.3 * r.steep.length - (r.road + r.dismount) / 2000
+    r.score = (share - 0.5) + r.length / maxM - 0.08 * r.maxRide - 0.3 * r.steep.length - (r.road + r.dismount) / 2000
       - r.unconfirmed / 5000 + (c.shape === "loop" ? 0.15 : c.shape === "lollipop" ? 0.08 : 0);
     r.code = `${a.node}:${encode(c.route)}`;
     if (kept.some((k) => jaccard(k.edges, r.edges) > 0.7 && k.score >= r.score)) continue;
