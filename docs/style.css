@@ -7,6 +7,7 @@
   --accent: #2a78d6;
   --critical: #c62828;
   --warn-bg: #fff4d6;
+  --steep: #fab219;
   /* grade tiers: one-hue ordinal ramp, light -> dark = gentle -> steep */
   --g1: #86b6ef;
   --g2: #3987e5;
@@ -95,3 +96,5 @@ main > * { min-width: 0; }
 footer { color: var(--ink-2); font-size: .8rem; border-top: 1px solid var(--line); padding-block: 8px 24px; }
 .poi-icon { background: var(--surface); border: 1px solid var(--ink-2); border-radius: 4px; font: 600 10px/14px system-ui; text-align: center; color: var(--ink); }
 .p-icon { background: var(--accent); color: #fff; border-radius: 4px; font: 700 12px/18px system-ui; text-align: center; border: 1px solid #fff; }
+.profile .steep-label { fill: var(--ink); font-weight: 600; }
+.steep-icon { background: #fab219; color: #0b0b0b; border: 1px solid #0b0b0b; border-radius: 4px; font: 600 11px/16px system-ui; text-align: center; white-space: nowrap; }

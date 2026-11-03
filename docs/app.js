@@ -56,6 +56,8 @@ function opts() {
     surface: $("#surface").value,
     avoidDismount: $("#avoidDismount").checked,
     avoidRoad: $("#avoidRoad").checked,
+    walk: $("#walk").checked,
+    walkMax: Math.max(10, +$("#walkMax").value || 200),
     sort: $("#sort").value,
   };
   try { localStorage.setItem("filters", JSON.stringify(o)); } catch (e) { /* storage unavailable */ }
@@ -81,6 +83,8 @@ function applyFilters(o) {
   $("#surface").value = o.surface;
   $("#avoidDismount").checked = o.avoidDismount;
   $("#avoidRoad").checked = o.avoidRoad;
+  $("#walk").checked = !!o.walk;
+  if (o.walkMax) $("#walkMax").value = o.walkMax;
   $("#sort").value = o.sort;
 }
 
@@ -96,9 +100,13 @@ function blockReason(p, i, o) {
   return null;
 }
 
-/** Walk from s in direction dir until something stops us. Returns {e, why}. */
+/**
+ * Walk from s in direction dir until something stops us. Returns {e, why}.
+ * With o.walk, stretches over the grade limit no longer than o.walkMax metres are
+ * passed (they become flagged walk-ups); a longer one ends the ride at its foot.
+ */
 function reach(p, s, dir, o, maxDist) {
-  let e = s;
+  let e = s, steepFrom = null;
   for (;;) {
     const nx = e + dir;
     if (nx < 0 || nx >= p.n) return { e, why: "trail end" };
@@ -107,7 +115,13 @@ function reach(p, s, dir, o, maxDist) {
     if (b) return { e, why: b };
     const w0 = dir > 0 ? nx - WIN : nx; // window just completed, in forward indexing
     const inside = dir > 0 ? w0 >= s : nx + WIN <= s;
-    if (inside && Math.abs(p.g[w0]) > o.grade) return { e, why: "grade limit" };
+    if (inside && Math.abs(p.g[w0]) > o.grade) {
+      if (!o.walk) return { e, why: "grade limit" };
+      if (steepFrom === null) steepFrom = nx - dir * WIN; // start of this window in travel order
+      if (Math.abs(p.d[nx] - p.d[steepFrom]) > o.walkMax) return { e: steepFrom, why: "long steep section" };
+    } else {
+      steepFrom = null;
+    }
     e = nx;
   }
 }
@@ -122,14 +136,14 @@ function generate(o) {
           if (o.mode === "rt") {
             const r = reach(p, a.i, dir, o, (o.max * MI) / 2);
             const len = 2 * Math.abs(p.d[r.e] - p.d[a.i]);
-            if (len >= Math.max(o.min * MI, 300)) out.push(makeRide(p, a, r.e, "rt", null, r.why));
+            if (len >= Math.max(o.min * MI, 300)) out.push(makeRide(o, p, a, r.e, "rt", null, r.why));
           } else {
             const r = reach(p, a.i, dir, o, o.max * MI);
             for (const b of p.access) {
               if (b === a) continue;
               const ok = dir > 0 ? b.i > a.i && b.i <= r.e : b.i < a.i && b.i >= r.e;
               const len = Math.abs(p.d[b.i] - p.d[a.i]);
-              if (ok && len >= Math.max(o.min * MI, 300)) out.push(makeRide(p, a, b.i, "ow", b));
+              if (ok && len >= Math.max(o.min * MI, 300)) out.push(makeRide(o, p, a, b.i, "ow", b));
             }
           }
         }
@@ -139,7 +153,7 @@ function generate(o) {
   return out;
 }
 
-function makeRide(p, a, e, mode, b, why) {
+function makeRide(o, p, a, e, mode, b, why) {
   const s = a.i, dir = e > s ? 1 : -1;
   const idx = [];
   for (let i = s; i !== e + dir; i += dir) idx.push(i);
@@ -157,8 +171,37 @@ function makeRide(p, a, e, mode, b, why) {
   const climbOut = climbOf(0, half);
   const climbBack = mode === "rt" ? climbOf(half, idx.length - 1) : 0;
 
-  let maxG = 0;
-  for (let i = lo; i + WIN <= hi; i++) maxG = Math.max(maxG, Math.abs(p.g[i]));
+  // steep spots: merged runs of 100 m windows over the limit (capped at 6% so "Any" still calls out steep bits)
+  const T = Math.min(o.grade, 6), steep = [];
+  let maxG = 0, maxRide = 0;
+  for (let i = lo; i + WIN <= hi; i++) {
+    const g = Math.abs(p.g[i]);
+    maxG = Math.max(maxG, g);
+    if (g <= T) { maxRide = Math.max(maxRide, g); continue; }
+    const way = Math.sign(p.g[i]) * dir > 0 ? "up" : "down";
+    const last = steep[steep.length - 1];
+    if (last && i <= last.to) {
+      last.to = i + WIN;
+      last.g = Math.max(last.g, g);
+      last.ways.add(way);
+    } else {
+      steep.push({ from: i, to: i + WIN, g, ways: new Set([way]) });
+    }
+  }
+  // windows overhang the steep ground by up to 100 m; trim to samples whose local (20 m) slope is steep
+  const local = (k) => Math.abs((p.ele[Math.min(k + 1, p.n - 1)] - p.ele[Math.max(k - 1, 0)]) /
+    (p.d[Math.min(k + 1, p.n - 1)] - p.d[Math.max(k - 1, 0)])) * 100;
+  for (const x of steep) {
+    while (x.from < x.to && local(x.from) <= T) x.from++;
+    while (x.to > x.from && local(x.to) <= T) x.to--;
+  }
+  for (const x of steep) {
+    const near = dir > 0 ? x.from : x.to, far = dir > 0 ? x.to : x.from;
+    x.at = Math.abs(p.d[near] - p.d[s]);
+    x.len = Math.abs(p.d[far] - p.d[near]);
+    x.mid = Math.round((x.from + x.to) / 2);
+    x.shape = x.ways.size > 1 ? "dip and climb" : x.ways.has("up") ? "uphill heading out" : "downhill heading out";
+  }
 
   const surf = [0, 0, 0, 0];
   let road = 0, dismount = 0;
@@ -173,7 +216,8 @@ function makeRide(p, a, e, mode, b, why) {
   const crossings = p.crossings.filter((x) => x.i > lo && x.i < hi);
 
   return {
-    p, a, b, mode, why, idx, dist, lo, hi, maxG, climbOut, climbBack,
+    p, a, b, mode, why, idx, dist, lo, hi, maxG, maxRide, steep, climbOut, climbBack,
+    steepWord: o.walk && o.grade < 99 ? "walk-up" : "steep spot",
     length: dist[dist.length - 1],
     surf: surf.map((m) => m / span), road, dismount, pois, crossings,
     near: haversine(NEWCASTLE, [a.lat, a.lon]),
@@ -187,7 +231,7 @@ function render() {
   const o = opts();
   current = generate(o);
   const sorters = {
-    grade: (x, y) => x.maxG - y.maxG || y.length - x.length,
+    grade: (x, y) => x.maxG - y.maxG || x.steep.length - y.steep.length || y.length - x.length,
     near: (x, y) => x.near - y.near || x.maxG - y.maxG,
     long: (x, y) => y.length - x.length,
   };
@@ -216,6 +260,10 @@ function tierBadge(g) {
 
 function badges(r) {
   const b = [];
+  if (r.steep.length) {
+    const n = r.steep.length, g = Math.max(...r.steep.map((x) => x.g));
+    b.push(`<span class="badge warn">⚠ ${n} ${r.steepWord}${n > 1 ? "s" : ""}, up to ${g.toFixed(1)}%</span>`);
+  }
   const unverified = r.surf[2] + r.surf[3];
   if (r.surf[1] > 0.05) b.push(`<span class="badge">${Math.round(r.surf[1] * 100)}% groomed gravel</span>`);
   if (unverified > 0.05) b.push(`<span class="badge warn">surface unverified ${Math.round(unverified * 100)}%</span>`);
@@ -237,7 +285,7 @@ function rideSummary(r) {
   return `<div class="ride-title">${esc(r.p.trail.name)}</div>
     <div class="ride-sub">From ${esc(r.a.name)}: ${to}</div>
     <div class="stats"><span>${(r.length / MI).toFixed(1)} mi</span>
-      <span>climb ${Math.round((r.climbOut + r.climbBack) * FT)} ft</span>${tierBadge(r.maxG)}
+      <span>climb ${Math.round((r.climbOut + r.climbBack) * FT)} ft</span>${tierBadge(r.maxRide)}
       <span class="muted">${(r.near / MI).toFixed(0)} mi from Newcastle</span></div>
     <div class="badges">${badges(r)}</div>`;
 }
@@ -308,6 +356,9 @@ function select(r, li) {
     L.polyline(ll.slice(k, j + 1), { color: MAP_TIERS[t], weight: 5 }).addTo(rideLayer);
     k = j;
   }
+  for (const x of r.steep)
+    L.marker([p.lat[x.mid], p.lon[x.mid]], { icon: L.divIcon({ className: "steep-icon", html: `⚠ ${x.g.toFixed(1)}%`, iconSize: [58, 18] }) })
+      .bindTooltip(`${x.g.toFixed(1)}% for about ${Math.round((x.len * FT) / 10) * 10} ft (${x.shape})`).addTo(rideLayer);
   map.fitBounds(L.latLngBounds(ll).pad(0.15));
   showDetail(r);
 }
@@ -344,8 +395,9 @@ function showDetail(r) {
     : `<span>climb ${Math.round(r.climbOut * FT)} ft</span>`;
   el.innerHTML = `
     <h2>${esc(t.name)}</h2>
-    <div class="stats"><span>${(r.length / MI).toFixed(2)} mi ${r.mode === "rt" ? "round trip" : "one-way"}</span>${back}${tierBadge(r.maxG)}</div>
+    <div class="stats"><span>${(r.length / MI).toFixed(2)} mi ${r.mode === "rt" ? "round trip" : "one-way"}</span>${back}${tierBadge(r.maxRide)}</div>
     <div class="badges">${badges(r)}</div>
+    ${steepHtml(r)}
     <h3>Elevation and grade</h3>
     <div class="profile-wrap"><svg class="profile" role="img" aria-label="Elevation profile: ${(r.length / MI).toFixed(1)} miles, max grade ${r.maxG.toFixed(1)} percent"></svg><div class="tip" hidden></div></div>
     <div class="legend">${TIER_LABELS.map((l, k) => `<span class="tier"><span class="sw" style="background:${tierColor(k)}"></span>${l}</span>`).join("")}
@@ -362,6 +414,13 @@ function showDetail(r) {
   el.hidden = false;
   drawProfile(r, el.querySelector(".profile"), el.querySelector(".tip"));
   $("#gpxBtn").addEventListener("click", (ev) => { ev.preventDefault(); downloadGpx(r); });
+}
+
+function steepHtml(r) {
+  if (!r.steep.length) return "";
+  const items = r.steep.map((x) => `<li>Mile ${(x.at / MI).toFixed(2)}${r.mode === "rt" ? " out (and again on the way back)" : ""}:
+    ${x.g.toFixed(1)}% for about ${Math.round((x.len * FT) / 10) * 10} ft (${x.shape}). You may need to walk.</li>`).join("");
+  return `<h3>⚠ Steep spots</h3><ul class="notes">${items}</ul>`;
 }
 
 function drawProfile(r, svg, tip) {
@@ -396,6 +455,13 @@ function drawProfile(r, svg, tip) {
     k = j;
   }
   parts.push(`<path d="${elev.map((e, q) => `${q ? "L" : "M"}${X(r.dist[q])},${Y(e)}`).join("")}" fill="none" stroke="${css("--ink")}" stroke-width="1.5"/>`);
+  for (const x of r.steep) {
+    const spans = [[x.at, x.at + x.len]];
+    if (r.mode === "rt") spans.push([r.length - x.at - x.len, r.length - x.at]);
+    for (const [a, b] of spans)
+      parts.push(`<rect x="${X(a)}" y="${m.t}" width="${Math.max(X(b) - X(a), 2)}" height="${H - m.t - m.b}" fill="${css("--steep")}" opacity="0.35"/>` +
+        `<text x="${(X(a) + X(b)) / 2}" y="${m.t + 10}" text-anchor="middle" class="steep-label">⚠ ${x.g.toFixed(1)}%</text>`);
+  }
   if (r.mode === "rt") {
     const xm = X(r.length / 2);
     parts.push(`<line x1="${xm}" x2="${xm}" y1="${m.t}" y2="${H - m.b}" stroke="${css("--ink-2")}" stroke-dasharray="4 3"/>`);
