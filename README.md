@@ -66,4 +66,7 @@ Elevation blocks are read from USGS 3DEP cloud-optimized GeoTIFFs and cached und
   automatically from OSM (`parking.py`): public lots in or beside parks or with trail/park
   names ("likely"), or unnamed lots right beside a long trail ("possible"). Both are marked
   unverified; on the pilot trails it rediscovers 13 of 16 curated lots.
+- Paths with no access tags are assumed open, except on golf courses, cemeteries, military land
+  and airfields (unnamed paths there, e.g. golf cart paths, are treated as not open to bikes;
+  named ones only on military land and airfields, unless inside a mapped park).
 - Closures change. Always check the authority's page before a ride.

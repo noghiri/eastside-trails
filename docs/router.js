@@ -766,6 +766,8 @@ onmessage = async (ev) => {
     const r = evaluate(route, m.opts, { shape, why: m.why, start: a?.idx, end: m.end });
     r.code = `${accessNode}:${encode(route)}`;
     r.short = shortCode(route, accessNode, shape);
+    // a shared link replays its route as-is; say so if parts are now known to be off-limits or closed
+    r.offLimits = route.reduce((m, h) => m + (E[h.k].bk === ACC.no || E[h.k].f & CLOSED ? h.part ?? E[h.k].L : 0), 0);
     postMessage({ type: "detail", ride: detail(r) });
   }
 };

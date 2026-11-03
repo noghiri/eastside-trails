@@ -42,6 +42,23 @@ def encode(coords, factor=1e6):
     return "".join(out)
 
 
+class OffLimits:
+    """Point-in-area lookup (bbox-prefiltered); used for off-limits grounds and for parks."""
+
+    def __init__(self, grounds):
+        self.items = []
+        for g in grounds:
+            for ring in g["rings"]:
+                lats, lons = [p[0] for p in ring], [p[1] for p in ring]
+                self.items.append(((min(lats), min(lons), max(lats), max(lons)), [tuple(p) for p in ring], g))
+
+    def at(self, pt):
+        for (s, w, n, e), ring, g in self.items:
+            if s <= pt[0] <= n and w <= pt[1] <= e and parking.inside(tuple(pt), ring):
+                return g
+        return None
+
+
 def tile_of(lat, lon):
     return f"{math.floor(lat * 10)}_{math.floor(lon * 10)}"
 
@@ -110,6 +127,9 @@ def main(region="newcastle"):
     pois_by_id = {p["osm"]: p for p in pois}
     by_name = {name: info for name, info in curated["trails"].items()}
 
+    areas = json.loads((ROOT / "cache" / f"areas-{region}.json").read_text())
+    off_limits = OffLimits(areas["off_limits"])
+    parks = OffLimits(areas["parks"])
     tiles = {}
     node_xy, ride_xy, named_xy, trail_nodes = {}, {}, {}, {}
     for e in pruned["edges"]:
@@ -122,6 +142,13 @@ def main(region="newcastle"):
         if t.get("surface") in info.get("authority_surface_over", ()):
             surf = info["untagged_surface"]
         bk, assumed = classify.bike(t)
+        # untagged paths on golf courses, cemeteries, military land and airfields aren't public;
+        # named ones there usually are public trails, except on military land and airfields,
+        # and anything inside a mapped park stays public
+        mid = e["geom"][len(e["geom"]) // 2]
+        ground = off_limits.at(mid) if e["cls"] == "path" and assumed else None
+        if ground and not (t.get("name") and ground["kind"] not in ("landuse=military", "aeroway=aerodrome"))                 and not (t.get("name") and parks.at(mid)):
+            bk, assumed = "no", True
         ev = elev[str(e["id"])]
         deltas = [ev["ele"][0]] + [b - a for a, b in zip(ev["ele"], ev["ele"][1:])]
         rec = {"i": e["id"], "c": e["cls"], "a": e["a"], "b": e["b"], "n": t.get("name"), "h": t["highway"],

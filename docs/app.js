@@ -355,6 +355,7 @@ function showDetail(r) {
     <h2>${esc(rideTitle(r))}</h2>
     <div class="stats"><span>${(r.length / MI).toFixed(2)} mi</span>${climb}${tierBadge(r.maxRide)}</div>
     <div class="badges">${badges(r)}</div>
+    ${r.offLimits > 0 ? `<p class="closure-note"><strong>This ride uses about ${Math.round(r.offLimits * FT / 10) * 10} ft of paths that are closed or not open to bikes</strong> (private grounds such as golf courses, or closures). The map data was updated after this link was made; pick another ride.</p>` : ""}
     ${r.approach > 1 ? `<p class="muted">The ride starts about ${Math.round(r.approach * FT / 10) * 10} ft from the parking spot.</p>` : ""}
     ${steepHtml(r)}
     <h3>Elevation and grade</h3>

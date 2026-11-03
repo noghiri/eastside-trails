@@ -130,23 +130,27 @@ def pois(region="newcastle"):
 
 PARK_KINDS = {("leisure", "park"), ("leisure", "nature_reserve"), ("boundary", "protected_area"),
               ("leisure", "recreation_ground")}
+# grounds whose untagged paths are not open to the public by default
+OFF_LIMITS_KINDS = {("leisure", "golf_course"), ("landuse", "cemetery"), ("amenity", "grave_yard"),
+                    ("landuse", "military"), ("aeroway", "aerodrome")}
 
 
 def areas(region="newcastle"):
     """Parking lots and parks as areas, including multipolygon relations (which `pois` misses).
 
-    Output cache/areas-<region>.json: {"parking": [{osm, lat, lon, tags}], "parks": [{osm, name, rings}]}
+    Output cache/areas-<region>.json: {"parking": [...], "parks": [...], "off_limits": [{osm, kind, name, rings}]}
     """
     s, w, n, e = bbox(**REGIONS[region])
-    parking, parks = [], []
+    parking, parks, off_limits = [], [], []
     fp = (osmium.FileProcessor(str(PBF))
-          .with_areas(osmium.filter.KeyFilter("amenity", "leisure", "boundary"))
+          .with_areas(osmium.filter.KeyFilter("amenity", "leisure", "boundary", "landuse", "aeroway"))
           .with_filter(osmium.filter.EntityFilter(osmium.osm.AREA)))
     for a in fp:
         tags = dict(a.tags)
         is_parking = tags.get("amenity") == "parking"
         is_park = any(tags.get(k) == v for k, v in PARK_KINDS)
-        if not (is_parking or is_park):
+        off = next((f"{k}={v}" for k, v in OFF_LIMITS_KINDS if tags.get(k) == v), None)
+        if not (is_parking or is_park or off):
             continue
         rings = [[(p.lat, p.lon) for p in ring if p.location.valid()] for ring in a.outer_rings()]
         rings = [r for r in rings if len(r) >= 3]
@@ -161,12 +165,15 @@ def areas(region="newcastle"):
             parking.append({"osm": osm, "lat": round(lat, 6), "lon": round(lon, 6),
                             "ring": [[round(p[0], 6), round(p[1], 6)] for p in rings[0]],
                             "tags": {k: v for k, v in tags.items() if k in POI_TAGS | {"park_ride", "operator:type"}}})
+        if off:
+            off_limits.append({"osm": osm, "kind": off, "name": tags.get("name"),
+                               "rings": [[[round(p[0], 6), round(p[1], 6)] for p in r] for r in rings]})
         if is_park:
             parks.append({"osm": osm, "name": tags.get("name"), "operator": tags.get("operator"),
                           "rings": [[[round(p[0], 6), round(p[1], 6)] for p in r] for r in rings]})
     path = ROOT / "cache" / f"areas-{region}.json"
-    path.write_text(json.dumps({"parking": parking, "parks": parks}))
-    print(len(parking), "parking areas,", len(parks), "parks ->", path)
+    path.write_text(json.dumps({"parking": parking, "parks": parks, "off_limits": off_limits}))
+    print(len(parking), "parking areas,", len(parks), "parks,", len(off_limits), "off-limits grounds ->", path)
 
 
 if __name__ == "__main__":
