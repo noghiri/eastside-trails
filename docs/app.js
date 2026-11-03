@@ -69,7 +69,7 @@ function onWorker(ev) {
     generate();
   } else if (m.type === "rides") {
     if (m.gen !== gen) return;
-    rides.push(...m.rides.filter((r) => passes(r)));
+    rides.push(...m.rides);
     renderList(m.done < m.total ? `${m.done}/${m.total} parking spots checked…` : null);
     if (m.done === m.total) {
       const want = parseHash();
@@ -94,7 +94,6 @@ function opts() {
     walk: $("#walk").checked,
     walkMax: Math.max(10, +$("#walkMax").value || 200),
     shapes: { outback: $("#shapeOutback").checked, loop: $("#shapeLoop").checked, oneway: $("#shapeOneway").checked },
-    noUturn: $("#noUturn").checked,
     radius: +$("#radius").value || 30,
     sort: $("#sort").value,
   };
@@ -117,13 +116,8 @@ function applyFilters(o) {
   if (o.shapes) {
     $("#shapeOutback").checked = o.shapes.outback; $("#shapeLoop").checked = o.shapes.loop; $("#shapeOneway").checked = o.shapes.oneway;
   }
-  $("#noUturn").checked = !!o.noUturn;
   if (o.radius) $("#radius").value = o.radius;
   if (o.sort) $("#sort").value = o.sort;
-}
-
-function passes(r) {
-  return !($("#noUturn").checked && r.uturns > 0);
 }
 
 function parseHash() {
@@ -184,7 +178,7 @@ function rideSub(r) {
   const a = ACCESS[r.start];
   if (r.shape === "out-and-back") return `From ${esc(a.name)}: out ${(r.length / 2 / MI).toFixed(1)} mi and back (turns at ${esc(r.why)})`;
   if (r.shape === "one-way") return `From ${esc(a.name)} to ${esc(ACCESS[r.end]?.name)}`;
-  if (r.shape === "lollipop") return `From ${esc(a.name)}: loop with ${(r.retraced / MI).toFixed(2)} mi of shared stem`;
+  if (r.shape === "lollipop") return `From ${esc(a.name)}: loop, plus a ${(r.retraced / MI).toFixed(2)} mi stem from the parking ridden both ways`;
   return `From ${esc(a.name)}: loop, no repeated sections`;
 }
 

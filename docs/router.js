@@ -7,7 +7,7 @@ const ACC = { no: 0, yes: 1, dismount: 2, unknown: 3 };
 const ROAD_WEIGHT = { living_street: 1.3, service: 1.5, residential: 1.5, unclassified: 1.8, tertiary: 2.5,
   tertiary_link: 2.5, secondary: 4, secondary_link: 4, primary: 6, primary_link: 6, trunk: 10, trunk_link: 10 };
 const UNKNOWN_SURFACE_OK = new Set(["cycleway", "footway", "pedestrian"]); // usually paved when untagged
-const RES = 10, WIN = 10, APPROACH_M = 250, MIN_RIDE_M = 300, SHORT_LINK_M = 30; // resample spacing (m), grade window in samples (100 m)
+const RES = 10, WIN = 10, APPROACH_M = 250, MIN_RIDE_M = 300, SHORT_LINK_M = 30, MAX_FAR_REPEAT_M = 60; // resample spacing (m), grade window in samples (100 m)
 
 let E = [];          // edges
 let nodeIdx = new Map(), NX = [], ADJ = []; // node id -> index, coords, adjacency [{k, dir}]
@@ -426,6 +426,30 @@ function evaluate(route, o, meta) {
 
 // ---------- generation ----------
 
+/**
+ * "loop" if nothing is ridden twice; "lollipop" if the repeat is a stem from the start, ridden
+ * out first and back last; null otherwise: an out-and-back (no loop at all), any U-turn, or
+ * repeats away from the start beyond MAX_FAR_REPEAT_M (short connectors into a loop are fine).
+ */
+function loopShape(route) {
+  let k = 0;
+  const n = route.length;
+  while (k < n / 2 && route[k].k === route[n - 1 - k].k && route[k].dir === -route[n - 1 - k].dir) k++;
+  const middle = route.slice(k, n - k);
+  if (!middle.length) return null;
+  const stem = new Set(route.slice(0, k).map((h) => h.k));
+  const seen = new Set();
+  let farRepeat = 0;
+  for (let i = 0; i < middle.length; i++) {
+    const h = middle[i];
+    if (i && middle[i - 1].k === h.k) return null; // U-turn
+    if (stem.has(h.k) || seen.has(h.k)) farRepeat += E[h.k].L;
+    seen.add(h.k);
+  }
+  if (farRepeat > MAX_FAR_REPEAT_M) return null;
+  return k ? "lollipop" : "loop";
+}
+
 function jaccard(a, b) {
   let inter = 0;
   for (const x of a) if (b.has(x)) inter++;
@@ -495,18 +519,16 @@ function ridesFrom(a, o) {
       const at = far.dir === 1 ? E[far.k].b : E[far.k].a;
       if (at === s) {
         const len = out.reduce((x, h) => x + E[h.k].L, 0);
-        if (len >= minM && len <= maxM) cands.push({ route: out, shape: "loop" });
+        if (len >= minM && len <= maxM && loopShape(out)) cands.push({ route: out, shape: loopShape(out) });
         continue;
       }
       const back = routeBack(at, s, o, new Set(out.map((h) => h.k)), far.k, maxM * 1.5);
       if (!back) continue;
       const route = out.concat(back);
       const len = route.reduce((x, h) => x + E[h.k].L, 0);
-      if (len < minM || len > maxM) continue;
-      const outSet = new Set(out.map((h) => h.k));
-      const shared = back.filter((h) => outSet.has(h.k)).length;
-      if (shared === back.length) continue; // that's an out-and-back
-      cands.push({ route, shape: shared ? "lollipop" : "loop" });
+      const shape = loopShape(route);
+      if (len < minM || len > maxM || !shape) continue;
+      cands.push({ route, shape });
     }
   }
 
@@ -540,11 +562,9 @@ function ridesFrom(a, o) {
       if (!back) continue;
       const route = out.concat(back);
       const len = route.reduce((x, h) => x + E[h.k].L, 0);
-      if (len < minM || len > maxM) continue;
-      const outSet = new Set(out.map((h) => h.k));
-      const shared = back.filter((h) => outSet.has(h.k)).length;
-      if (shared === back.length) continue;
-      cands.push({ route, shape: shared ? "lollipop" : "loop" });
+      const shape = loopShape(route);
+      if (len < minM || len > maxM || !shape) continue;
+      cands.push({ route, shape });
     }
   }
 
