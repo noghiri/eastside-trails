@@ -56,7 +56,7 @@ def main(region="newcastle"):
         adj.setdefault(e["a"], []).append((e["b"], e))
         adj.setdefault(e["b"], []).append((e["a"], e))
         xy[e["a"]], xy[e["b"]] = e["geom"][0], e["geom"][-1]
-    pilot = json.loads((ROOT / "docs" / "data" / "trails.json").read_text())
+    pilot = json.loads((ROOT / "data" / "pilot-reference.json").read_text())
     FT, MI = 3.28084, 1609.34
     for t in pilot["trails"]:
         for k, p in enumerate(t["pieces"]):

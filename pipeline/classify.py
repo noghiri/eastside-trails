@@ -56,8 +56,13 @@ def bike_oneway(t):
     return {"yes": 1, "1": 1, "true": 1, "-1": -1}.get(v, 0)
 
 
+VAGUE = {"unpaved"}  # says only "not paved": could be packed gravel or dirt
+
+
 def surface(t):
     s = t.get("surface")
+    if s in VAGUE:
+        return "unknown"
     if s in PAVED:
         return "paved"
     if s in GROOMED:
@@ -75,7 +80,9 @@ def surface(t):
 
 def flags(t):
     f = 0
-    if t.get("highway") == "construction" or (bike(t)[0] == "no" and foot(t)[0] == "no"):
+    # closed = construction or an explicit "no"; private land is merely unusable, not a closure
+    private = "private" in (t.get("access"), t.get("bicycle"), t.get("foot"))
+    if t.get("highway") == "construction" or (bike(t)[0] == "no" and foot(t)[0] == "no" and not private):
         f |= CLOSED
     if t.get("highway") in ROADS and t.get("service") != "parking_aisle":
         f |= ROAD

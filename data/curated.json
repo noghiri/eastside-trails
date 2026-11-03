@@ -62,6 +62,11 @@
       "title": "King County: Cedar River Trail (legacy page)",
       "url": "https://kingcounty.gov/services/parks-recreation/parks/trails/regional-trails/popular-trails/cedar-river.aspx",
       "checked": "2026-11-02"
+    },
+    "wsp-lssp": {
+      "title": "Washington State Parks: Lake Sammamish State Park",
+      "url": "https://parks.wa.gov/find-parks/state-parks/lake-sammamish-state-park",
+      "checked": "2026-11-02"
     }
   },
   "trails": {
@@ -197,7 +202,11 @@
           "notes": "Dawn to dusk; parking free but limited, heavy weekend use (SPU)."
         }
       ],
-      "untagged_surface": "groomed"
+      "untagged_surface": "groomed",
+      "authority_surface_over": [
+        "gravel",
+        "unpaved"
+      ]
     },
     "Cedar River Trail": {
       "authority": "King County Parks",
@@ -365,6 +374,47 @@
         }
       ],
       "untagged_surface": "paved"
+    },
+    "Lake Sammamish State Park": {
+      "authority": "Washington State Parks",
+      "authority_url": "https://parks.wa.gov/find-parks/state-parks/lake-sammamish-state-park",
+      "wta_url": null,
+      "surface_summary": "Park path network; surfaces vary (see map flags).",
+      "surface_sources": [
+        "osm"
+      ],
+      "ebike": "State Parks e-bike rules not yet verified for this park; obey posted signs.",
+      "notes": [
+        {
+          "kind": "closure",
+          "text": "Issaquah Creek and Tibbetts Creek bridges closed due to erosion; no repair timeline.",
+          "source": "wsp-lssp"
+        },
+        {
+          "kind": "closure",
+          "text": "Homestead Trail closed until further notice due to a washout.",
+          "source": "wsp-lssp"
+        },
+        {
+          "kind": "note",
+          "text": "Bike access on the park's footpaths isn't confirmed; check posted signs.",
+          "source": "wsp-lssp"
+        }
+      ],
+      "access": [
+        {
+          "name": "Lake Sammamish State Park",
+          "address": "2182 NW Sammamish Rd, Issaquah, WA 98027",
+          "address_source": "wsp-lssp",
+          "source": "wsp-lssp",
+          "locate": {
+            "geocode": "2182 NW Sammamish Rd, Issaquah, WA 98027"
+          },
+          "pass": "discover",
+          "pass_source": "wsp-lssp",
+          "notes": "Park hours 6:30 a.m. to dusk; restrooms and drinking water listed by State Parks."
+        }
+      ]
     }
   }
 }

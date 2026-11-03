@@ -4,7 +4,7 @@ Inputs: cache/pruned-, elev-, pois-, network-<region>.json, data/curated.json
 Outputs: docs/net/index.json (tile list, sources, trail info) and docs/net/t/<row>_<col>.json
 
 Edge record (compact keys):
-  i id, a/b node ids, n name, h highway, s surface code, bk/ft bike/foot access code,
+  i id, c class (path, road, join), a/b node ids, n name, h highway, s surface code, bk/ft bike/foot access code,
   ba 1 if bike access is a default rather than a tag, ow bike oneway (1, -1, 0), f flags,
   m mtb:scale, sc sac_scale, r elevation resolution (1 or 10 m), L length m,
   g polyline-encoded geometry (1e-6), st elevation step m, e elevation deltas in dm.
@@ -66,8 +66,19 @@ class Grid:
         return best if best[0] <= radius else (None, None)
 
 
-def locate(spec, pois_by_id, roads, grid):
-    """Curated access point -> (lat, lon) of the parking spot."""
+def densify(geom, step=10.0):
+    out = [geom[0]]
+    for a, b in zip(geom, geom[1:]):
+        n = max(1, int(geo.dist(a, b) // step))
+        out += [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) for k in range(1, n + 1)]
+    return out
+
+
+def locate(spec, pois_by_id, roads, trail_grid):
+    """Curated access point -> (lat, lon) of the parking spot.
+
+    Street-defined points are placed where that street meets the access point's own trail,
+    since street names like "SE 8th Street" repeat across towns."""
     if "osm" in spec:
         p = pois_by_id[spec["osm"]]
         return p["lat"], p["lon"]
@@ -75,8 +86,8 @@ def locate(spec, pois_by_id, roads, grid):
         return net.geocode(spec["geocode"])
     best = (math.inf, None)
     for w in roads.get(spec["road"], []):
-        for p in w:
-            d, nid = grid.nearest(p[0], p[1], 60)
+        for p in densify(w):
+            d, nid = trail_grid.nearest(p[0], p[1], 60) if trail_grid else (None, None)
             if nid is not None and d < best[0]:
                 best = (d, p)
     return best[1]
@@ -97,17 +108,20 @@ def main(region="newcastle"):
     by_name = {name: info for name, info in curated["trails"].items()}
 
     tiles = {}
-    node_xy = {}
+    node_xy, ride_xy, named_xy, trail_nodes = {}, {}, {}, {}
     for e in pruned["edges"]:
         t = e["tags"]
         info = by_name.get(t.get("name"), {})
         surf = classify.surface(t)
         if surf == "unknown" and "untagged_surface" in info:
             surf = info["untagged_surface"]
+        # the authority's whole-trail surface beats vague OSM tags on that trail
+        if t.get("surface") in info.get("authority_surface_over", ()):
+            surf = info["untagged_surface"]
         bk, assumed = classify.bike(t)
         ev = elev[str(e["id"])]
         deltas = [ev["ele"][0]] + [b - a for a, b in zip(ev["ele"], ev["ele"][1:])]
-        rec = {"i": e["id"], "a": e["a"], "b": e["b"], "n": t.get("name"), "h": t["highway"],
+        rec = {"i": e["id"], "c": e["cls"], "a": e["a"], "b": e["b"], "n": t.get("name"), "h": t["highway"],
                "s": SURF[surf], "bk": ACCESS[bk], "ba": int(assumed), "ft": ACCESS[classify.foot(t)[0]],
                "ow": classify.bike_oneway(t), "f": classify.flags(t), "m": t.get("mtb:scale"),
                "sc": t.get("sac_scale"), "r": ev["src"], "L": e["len_m"], "g": encode(e["geom"]),
@@ -115,8 +129,20 @@ def main(region="newcastle"):
         mid = e["geom"][len(e["geom"]) // 2]
         tiles.setdefault(tile_of(*mid), {"edges": [], "pois": [], "access": []})["edges"].append(rec)
         node_xy[e["a"]], node_xy[e["b"]] = e["geom"][0], e["geom"][-1]
+        if e["cls"] == "path" and not classify.flags(t) & classify.CLOSED and bk != "no":
+            ride_xy[e["a"]], ride_xy[e["b"]] = e["geom"][0], e["geom"][-1]
+        if t.get("name") in by_name:
+            for j, pt in enumerate(e["geom"]):
+                named_xy.setdefault(t["name"], {})[(e["id"], j)] = pt
+            if not classify.flags(t) & classify.CLOSED and bk != "no":
+                trail_nodes.setdefault(t["name"], {}).update({e["a"]: e["geom"][0], e["b"]: e["geom"][-1]})
 
     grid = Grid(node_xy)
+    # parking snaps to a node on a rideable path, not to a lot aisle or road node
+    ride_grid = Grid(ride_xy)
+    trail_grids = {name: Grid(xy) for name, xy in named_xy.items()}
+    # curated parking starts on its own trail: the walk from the car to the trail isn't part of the ride
+    trail_node_grids = {name: Grid(xy) for name, xy in trail_nodes.items()}
     for p in pois:
         if p["kind"] in ("toilets", "water", "viewpoint", "trailhead"):
             d, nid = grid.nearest(p["lat"], p["lon"], POI_RADIUS)
@@ -125,9 +151,20 @@ def main(region="newcastle"):
                     {"k": p["kind"], "lat": p["lat"], "lon": p["lon"], "node": nid, "name": p["tags"].get("name"),
                      "osm": p["osm"]})
 
+    # OSM trailheads become unverified access points (no curated source yet)
+    for p in pois:
+        if p["kind"] == "trailhead":
+            d, nid = ride_grid.nearest(p["lat"], p["lon"], ACCESS_RADIUS)
+            if nid is not None:
+                tiles.setdefault(tile_of(p["lat"], p["lon"]), {"edges": [], "pois": [], "access": []})["access"].append({
+                    "name": p["tags"].get("name") or "Trailhead (OSM)", "trail": None, "lat": p["lat"], "lon": p["lon"],
+                    "node": nid, "address": None, "address_source": None, "source": "osm", "verified": False,
+                    "pass": None, "pass_source": None, "lot_osm": p["osm"], "capacity": None,
+                    "notes": "Trailhead mapped in OpenStreetMap; parking and rules not checked."})
+
     for name, info in curated["trails"].items():
         for a in info.get("access", []):
-            pt = locate(a["locate"], pois_by_id, roads, grid)
+            pt = locate(a["locate"], pois_by_id, roads, trail_grids.get(name))
             if pt is None:
                 print("  WARNING: could not locate", a["name"])
                 continue
@@ -139,7 +176,9 @@ def main(region="newcastle"):
                 near = [p for p in pois if p["kind"] == "parking" and geo.dist(pt, (p["lat"], p["lon"])) <= 150]
                 lot = min(near, key=lambda p: geo.dist(pt, (p["lat"], p["lon"])), default=None)
             spot = (lot["lat"], lot["lon"]) if lot else pt
-            d, nid = grid.nearest(*spot, ACCESS_RADIUS)
+            d, nid = trail_node_grids[name].nearest(*spot, ACCESS_RADIUS) if name in trail_node_grids else (None, None)
+            if nid is None:
+                d, nid = ride_grid.nearest(*spot, ACCESS_RADIUS)
             if nid is None:
                 print("  WARNING: no network node near", a["name"])
                 continue
@@ -159,7 +198,7 @@ def main(region="newcastle"):
     for key, data in tiles.items():
         (OUT / "t" / f"{key}.json").write_text(json.dumps(data, separators=(",", ":"), ensure_ascii=False),
                                                encoding="utf-8")
-    trails = {name: {k: v for k, v in info.items() if k not in ("access", "orient_from", "min_piece_m")}
+    trails = {name: {k: v for k, v in info.items() if k not in ("access", "orient_from", "min_piece_m", "authority_surface_over")}
               for name, info in curated["trails"].items()}
     (OUT / "index.json").write_text(json.dumps({
         "region": region, "bbox": pruned["bbox"], "tiles": sorted(tiles), "sources": curated["sources"],

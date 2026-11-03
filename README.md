@@ -5,14 +5,20 @@ Newcastle, WA, aimed at finding easy rides for a new rider on a class 1/2 e-bike
 
 Site: https://noghiri.github.io/eastside-trails/
 
-- Ride generator: pick round trip or one-way, a max grade tier (≤2/≤4/≤6%), and a length
-  range. Rides start at a parking point and stop before closures, grade limits, or
-  sections you choose to avoid.
-- Elevation profile colored by grade (100 m windows), climb out and back, GPX download.
-- Parking points with addresses (lat/lon fallback), Discover Pass flags, and sources.
+- Ride finder over a routable path network: out-and-back, loop, lollipop and one-way rides
+  from parking points, respecting one-way trails; "no turnarounds" means no U-turns.
+- Strict grade tiers (≤2/≤4/≤6%) or short walk-ups, with steep spots called out.
+- Elevation profile colored by grade (100 m windows), GPX download, share links that rebuild
+  the exact route.
+- Parking with addresses (lat/lon fallback), Discover Pass flags and sources; flags for
+  closures, on-street sections, unverified surface, unconfirmed bike access.
 
-Status: pilot with 4 trails (Preston-Snoqualmie, Snoqualmie Valley, Cedar River,
-East Lake Sammamish).
+Coverage: 35 mi around Newcastle. Curated (authority-checked) trails: Preston-Snoqualmie,
+Snoqualmie Valley, Cedar River, East Lake Sammamish, Lake Sammamish State Park; OSM
+trailheads are included as unverified parking.
+
+The site runs in the browser: `docs/router.js` (a web worker) loads the 0.1-degree tiles in
+`docs/net/` for the search circle and generates rides; `docs/app.js` is the UI.
 
 ## Sources and how they're used
 
@@ -26,20 +32,13 @@ East Lake Sammamish).
 
 Where OSM has no surface tag, the build uses the authority's stated surface for the whole
 trail (`untagged_surface` in `data/curated.json`) only when the authority describes the whole
-trail that way.
+trail that way; `authority_surface_over` lets that statement replace vague OSM values
+(e.g. `gravel`) on that trail only.
 
 ## Building the data
 
-Pilot pipeline (current site, `docs/data`):
-
-```
-cd pipeline
-python fetch_osm.py      # trail geometry + nearby features via Overpass (cached in cache/)
-python build.py          # elevation, gap handling, access points -> docs/data, docs/gpx
-```
-
-Network pipeline (in progress, `docs/net`): routable path network for loops, one-way trails
-and other modes. Needs `pip install osmium rasterio`.
+Pipeline (`docs/net`). Needs `pip install osmium rasterio`. The pilot pipeline is kept in
+`pipeline/legacy/`; its output is `data/pilot-reference.json`, which `validate.py` compares against.
 
 ```
 cd pipeline

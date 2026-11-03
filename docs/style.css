@@ -98,3 +98,8 @@ footer { color: var(--ink-2); font-size: .8rem; border-top: 1px solid var(--line
 .p-icon { background: var(--accent); color: #fff; border-radius: 4px; font: 700 12px/18px system-ui; text-align: center; border: 1px solid #fff; }
 .profile .steep-label { fill: var(--ink); font-weight: 600; }
 .steep-icon { background: #fab219; color: #0b0b0b; border: 1px solid #0b0b0b; border-radius: 4px; font: 600 11px/16px system-ui; text-align: center; white-space: nowrap; }
+.btn.small { padding: 2px 8px; margin: 4px 0 0; font-size: .85rem; }
+.picking #map { outline: 3px solid var(--accent); cursor: crosshair; }
+.shape { font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; color: var(--ink-2); }
+.p-icon.unverified { background: #6b6a65; }
+.closure-note { color: var(--critical); }
