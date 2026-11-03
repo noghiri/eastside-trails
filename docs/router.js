@@ -367,11 +367,9 @@ function samples(route) {
   return out;
 }
 
-/** Trail and path names by distance ridden; street names only when the ride uses no named path. */
+/** Named trails and paths ridden, longest first; streets are left out (they show as on-street). */
 function rideNames(names) {
-  const all = [...names.entries()].sort((a, b) => b[1].len - a[1].len);
-  const paths = all.filter(([, v]) => !v.road);
-  return (paths.length ? paths : all).map(([n]) => n);
+  return [...names.entries()].filter(([, v]) => !v.road).sort((a, b) => b[1].len - a[1].len).map(([n]) => n);
 }
 
 function evaluate(route, o, meta) {

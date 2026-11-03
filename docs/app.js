@@ -175,7 +175,9 @@ const SHAPE_TEXT = { "out-and-back": "Out-and-back", loop: "Loop", lollipop: "Lo
 
 function rideTitle(r) {
   const named = r.names.slice(0, 2).join(" + ");
-  return named || "Unnamed paths";
+  if (named) return named;
+  const trail = ACCESS[r.start]?.trail;
+  return trail ? `${trail} paths` : "Unnamed paths";
 }
 
 function rideSub(r) {

@@ -79,6 +79,8 @@ def locate(spec, pois_by_id, roads, trail_grid):
 
     Street-defined points are placed where that street meets the access point's own trail,
     since street names like "SE 8th Street" repeat across towns."""
+    if "latlon" in spec:  # e.g. a lot mapped as a multipolygon, which the POI extract skips
+        return tuple(spec["latlon"])
     if "osm" in spec:
         p = pois_by_id[spec["osm"]]
         return p["lat"], p["lon"]
@@ -170,8 +172,10 @@ def main(region="newcastle"):
                 continue
             # prefer the parking lot itself when one is mapped close to the located point
             lot = None
-            if "osm" in a["locate"]:
+            if "osm" in a["locate"] and a["locate"]["osm"] in pois_by_id:
                 lot = pois_by_id[a["locate"]["osm"]]
+            elif "latlon" in a["locate"]:
+                lot = None
             else:
                 near = [p for p in pois if p["kind"] == "parking" and geo.dist(pt, (p["lat"], p["lon"])) <= 150]
                 lot = min(near, key=lambda p: geo.dist(pt, (p["lat"], p["lon"])), default=None)
@@ -190,7 +194,7 @@ def main(region="newcastle"):
                 "address_source": a.get("address_source") or ("osm" if osm_addr else None),
                 "source": a["source"], "verified": a.get("verified", True),
                 "pass": a.get("pass"), "pass_source": a.get("pass_source"),
-                "lot_osm": lot["osm"] if lot else None, "capacity": lt.get("capacity"), "notes": a.get("notes")})
+                "lot_osm": lot["osm"] if lot else a["locate"].get("osm"), "capacity": lt.get("capacity"), "notes": a.get("notes")})
 
     (OUT / "t").mkdir(parents=True, exist_ok=True)
     for old in (OUT / "t").glob("*.json"):

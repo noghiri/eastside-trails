@@ -413,6 +413,22 @@
           "pass": "discover",
           "pass_source": "wsp-lssp",
           "notes": "Beach lot by the playground (OSM: 250 spaces). Address shown is the park's address. Park hours 6:30 a.m. to dusk; restrooms and drinking water listed by State Parks."
+        },
+        {
+          "name": "Lake Sammamish State Park: Sunset Beach lot",
+          "address": "2182 NW Sammamish Rd, Issaquah, WA 98027",
+          "address_source": "wsp-lssp",
+          "source": "wsp-lssp",
+          "locate": {
+            "latlon": [
+              47.5574045,
+              -122.0641346
+            ],
+            "osm": "relation/11642300"
+          },
+          "pass": "discover",
+          "pass_source": "wsp-lssp",
+          "notes": "Large beach lot (OSM: 1,200 spaces, Discover Pass required). Address shown is the park's address. Park hours 6:30 a.m. to dusk."
         }
       ]
     }
