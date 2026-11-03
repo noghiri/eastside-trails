@@ -111,6 +111,8 @@ function onWorker(ev) {
 // ---------- filters ----------
 
 const isFoot = () => $("#on").value === "foot";
+/** "ride"/"rides", or "hike"/"hikes" on foot. */
+const word = (n = 1) => (isFoot() ? "hike" : "ride") + (n === 1 ? "" : "s");
 
 function gradeIndex() {
   return +document.querySelector('input[name="grade"]:checked').value;
@@ -222,7 +224,7 @@ function generate() {
   rideLayer.clearLayers();
   const o = opts();
   if (!o.shapes.outback && !o.shapes.loop && !o.shapes.oneway) {
-    $("#count").textContent = "Pick at least one ride shape.";
+    $("#count").textContent = "Pick at least one route shape.";
     return;
   }
   worker.postMessage({ type: "generate", gen, opts: o });
@@ -239,12 +241,13 @@ function renderList(progress) {
   };
   rides.sort(sorters[sort]);
   $("#count").textContent = (rides.length
-    ? `${rides.length} ride${rides.length === 1 ? "" : "s"}. Distances are straight-line from ${centerName}.`
-    : progress ? "" : "No rides match. Try a higher grade limit, a shorter minimum, or allowing walk-ups.") + (progress ? ` ${progress}` : "") ;
+    ? `${rides.length} ${word(rides.length)}. Distances are straight-line from ${centerName}.`
+    : progress ? "" : `No ${word(2)} match. Try a higher grade limit${isFoot() ? " or" : ","} a shorter minimum${isFoot() ? "" : ", or allowing walk-ups"}.`) +
+    (progress ? ` ${progress}` : "");
   const ol = $("#rides");
   ol.innerHTML = rides.slice(0, shown).map((r, k) =>
     `<li tabindex="0" data-k="${k}" aria-selected="${r.code === selectedCode}">${rideSummary(r)}</li>`).join("") +
-    (rides.length > shown ? `<li class="more"><button type="button" class="btn ghost" id="moreBtn">Show more rides (${rides.length - shown} more)</button></li>` : "");
+    (rides.length > shown ? `<li class="more"><button type="button" class="btn ghost" id="moreBtn">Show more ${word(2)} (${rides.length - shown} more)</button></li>` : "");
   $("#moreBtn")?.addEventListener("click", () => { shown += PAGE; renderList(); });
   ol.querySelectorAll("li[data-k]").forEach((li) => {
     const pick = () => select(rides[+li.dataset.k]);
@@ -443,16 +446,16 @@ function showDetail(r) {
     <h2>${esc(rideTitle(r))}</h2>
     <div class="stats"><span>${(r.length / MI).toFixed(2)} mi</span>${climb}${tierBadge(r.maxRide)}</div>
     <div class="badges">${badges(r)}</div>
-    ${r.offLimits > 0 ? `<p class="closure-note"><strong>This ride uses about ${Math.round(r.offLimits * FT / 10) * 10} ft of paths that are closed or not open to bikes</strong> (private grounds such as golf courses, or closures). The map data was updated after this link was made; pick another ride.</p>` : ""}
-    ${r.approach > 1 ? `<p class="muted">The ride starts about ${Math.round(r.approach * FT / 10) * 10} ft from the parking spot.</p>` : ""}
+    ${r.offLimits > 0 ? `<p class="closure-note"><strong>This ${word()} uses about ${Math.round(r.offLimits * FT / 10) * 10} ft of paths that are closed or not open to ${isFoot() ? "the public" : "bikes"}</strong> (private grounds such as golf courses, or closures). The map data was updated after this link was made; pick another ${word()}.</p>` : ""}
+    ${r.approach > 1 ? `<p class="muted">The ${word()} starts about ${Math.round(r.approach * FT / 10) * 10} ft from the parking spot.</p>` : ""}
     ${r.endGap > 1 ? `<p class="muted">The loop finishes about ${Math.round(r.endGap * FT / 10) * 10} ft from where it started.</p>` : ""}
     ${steepHtml(r)}
     <h3>Elevation and grade</h3>
     <div class="profile-wrap"><svg class="profile" role="img" aria-label="Elevation profile: ${(r.length / MI).toFixed(1)} miles, max grade ${r.maxG.toFixed(1)} percent"></svg><div class="tip" hidden></div></div>
     <div class="legend">${TIER_LABELS.map((l, k) => `<span class="tier"><span class="sw" style="background:${tierColor(k)}"></span>${l}</span>`).join("")}
       <span>Grade over 100 m, either direction.${r.shape === "out-and-back" ? " The dashed line marks the turnaround." : ""}</span></div>
-    ${r.short ? `<button type="button" class="btn" id="shareBtn">Share this ride</button>` : ""}
-    <a class="btn ghost" id="gpxBtn" href="#">Download ride GPX</a>
+    ${r.short ? `<button type="button" class="btn" id="shareBtn">Share this ${word()}</button>` : ""}
+    <a class="btn ghost" id="gpxBtn" href="#">Download ${word()} GPX</a>
     <p class="muted" id="shareMsg" aria-live="polite"></p>
     ${r.ebikeSources?.length ? `<p class="muted">E-bike rules applied (class ${$("#on").value.slice(1)}): ${r.ebikeSources.map(srcLink).join(", ")}. Rules are by land manager; obey posted signs.</p>` : ""}
     <h3>Parking</h3>
