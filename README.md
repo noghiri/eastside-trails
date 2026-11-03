@@ -30,14 +30,32 @@ trail that way.
 
 ## Building the data
 
+Pilot pipeline (current site, `docs/data`):
+
 ```
 cd pipeline
-python fetch_osm.py      # trail geometry + nearby features (cached in cache/)
+python fetch_osm.py      # trail geometry + nearby features via Overpass (cached in cache/)
 python build.py          # elevation, gap handling, access points -> docs/data, docs/gpx
 ```
 
-`build.py` also needs `cache/osm_gaps.json` and `cache/osm_roads.json`; see `fetch_osm.py`
-for `gap_query` and `road_query`.
+Network pipeline (in progress, `docs/net`): routable path network for loops, one-way trails
+and other modes. Needs `pip install osmium rasterio`.
+
+```
+cd pipeline
+# Geofabrik Washington extract -> cache/geofabrik/washington-latest.osm.pbf
+python network.py        # all highways in the region, split at junctions
+python network.py pois   # toilets, water, viewpoints, trailheads, parking
+python prune.py          # paths + short road connectors + joins across tiny unmapped gaps
+python elevate.py split  # per-area batches
+python elevate.py run    # resumable; 1 m lidar for bike-relevant edges, 10 m elsewhere
+python elevate.py merge  # bridge handling (levelled approaches, chained spans)
+python validate.py       # compare against the pilot trails
+python tiles.py          # docs/net/index.json + 0.1-degree tiles
+```
+
+Elevation blocks are read from USGS 3DEP cloud-optimized GeoTIFFs and cached under
+`cache/dem/`; a rebuild never refetches a block.
 
 ## Known limitations
 
