@@ -1,6 +1,6 @@
 "use strict";
 
-const NEWCASTLE = [47.5301, -122.1557];
+const DEFAULT_CENTER = [47.6104, -122.2007]; // downtown Bellevue
 const MI = 1609.34, FT = 3.28084;
 // "on" (what you travel on) sets legality; "terrain" sets the surface preference; presets fill both
 const PRESETS = {
@@ -30,7 +30,7 @@ let map, baseLayer, rideLayer, worker;
 let ACCESS = [], INFO = null, rides = [], gen = 0, selectedCode = null;
 const PAGE = 100;
 let shown = PAGE;
-let center = NEWCASTLE, centerName = "Newcastle";
+let center = DEFAULT_CENTER, centerName = "Bellevue";
 
 // ---------- setup ----------
 
