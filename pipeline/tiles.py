@@ -17,11 +17,13 @@ import sys
 import classify
 import geo
 import net
+import land as land_mod
 import parking
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "net"
 ACCESS = {"yes": 1, "no": 0, "dismount": 2, "unknown": 3}
+AGENCIES = ["none"] + land_mod.PRIORITY
 SURF = {k: i for i, k in enumerate(classify.SURFACES)}
 POI_RADIUS = 100.0
 ACCESS_RADIUS = 400.0
@@ -130,6 +132,7 @@ def main(region="newcastle"):
     areas = json.loads((ROOT / "cache" / f"areas-{region}.json").read_text())
     off_limits = OffLimits(areas["off_limits"])
     parks = OffLimits(areas["parks"])
+    land = land_mod.LandIndex(json.loads((ROOT / "cache" / f"land-{region}.json").read_text()))
     tiles = {}
     node_xy, ride_xy, named_xy, trail_nodes = {}, {}, {}, {}
     for e in pruned["edges"]:
@@ -151,7 +154,10 @@ def main(region="newcastle"):
             bk, assumed = "no", True
         ev = elev[str(e["id"])]
         deltas = [ev["ele"][0]] + [b - a for a, b in zip(ev["ele"], ev["ele"][1:])]
+        owner = land.at(mid)
         rec = {"i": e["id"], "c": e["cls"], "a": e["a"], "b": e["b"], "n": t.get("name"), "h": t["highway"],
+               "ag": AGENCIES.index(owner["agency"]) if owner else 0, "mo": classify.motor_open(t),
+               "rt": int((t.get("name") or "").lower() in classify.KC_REGIONAL_TRAILS),
                "s": SURF[surf], "bk": ACCESS[bk], "ba": int(assumed), "ft": ACCESS[classify.foot(t)[0]],
                "ow": classify.bike_oneway(t), "f": classify.flags(t), "m": t.get("mtb:scale"),
                "sc": t.get("sac_scale"), "r": ev["src"], "L": e["len_m"], "g": encode(e["geom"]),
@@ -243,7 +249,7 @@ def main(region="newcastle"):
             "address": None, "address_source": None, "source": "osm", "verified": False,
             "pass": "discover" if c.get("fee") and "discover" in c["fee"].lower() else None,
             "pass_source": "osm" if c.get("fee") and "discover" in c["fee"].lower() else None,
-            "lot_osm": c["osm"], "capacity": c.get("capacity"), "tier": c["tier"],
+            "lot_osm": c["osm"], "capacity": c.get("capacity"), "tier": c["tier"], "kind": c.get("kind", "easy"),
             "notes": ("Found automatically from OpenStreetMap: " +
                       ("a public lot in or beside a park or trail." if c["tier"] == "likely"
                        else "an unnamed lot right beside the trail; it may belong to a business. Check signs.")
@@ -261,7 +267,7 @@ def main(region="newcastle"):
         "region": region, "bbox": pruned["bbox"], "tiles": sorted(tiles), "sources": curated["sources"],
         "trails": trails, "flags": {"closed": classify.CLOSED, "road": classify.ROAD,
                                     "dismount": classify.DISMOUNT, "bridge": classify.BRIDGE},
-        "surfaces": classify.SURFACES, "access": ACCESS,
+        "surfaces": classify.SURFACES, "access": ACCESS, "agencies": AGENCIES,
     }, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     size = sum(f.stat().st_size for f in (OUT / "t").glob("*.json"))
     print(f"{len(tiles)} tiles, {size / 1e6:.1f} MB, "

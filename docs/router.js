@@ -7,7 +7,8 @@ const ACC = { no: 0, yes: 1, dismount: 2, unknown: 3 };
 const ROAD_WEIGHT = { living_street: 1.3, service: 1.5, residential: 1.5, unclassified: 1.8, tertiary: 2.5,
   tertiary_link: 2.5, secondary: 4, secondary_link: 4, primary: 6, primary_link: 6, trunk: 10, trunk_link: 10 };
 const UNKNOWN_SURFACE_OK = new Set(["cycleway", "footway", "pedestrian"]); // usually paved when untagged
-const RES = 10, WIN = 10, APPROACH_M = 250, MIN_RIDE_M = 300, SHORT_LINK_M = 30, MAX_FAR_REPEAT_M = 60; // resample spacing (m), grade window in samples (100 m)
+const RES = 10, WIN = 10, APPROACH_M = 250, MIN_RIDE_M = 300, SHORT_LINK_M = 30, MAX_FAR_REPEAT_M = 60, LOOP_CLOSE_M = 200,
+  STEM_NEAR_M = 800, STEM_NEAR_SHARE = 0.25; // resample spacing (m), grade window in samples (100 m)
 
 let E = [];          // edges
 let nodeIdx = new Map(), NX = [], ADJ = []; // node id -> index, coords, adjacency [{k, dir}]
@@ -47,6 +48,7 @@ function addTile(t) {
     const a = node(r.a, g[0][0], g[0][1]), b = node(r.b, g[g.length - 1][0], g[g.length - 1][1]);
     const k = E.length;
     E.push({ id: r.i, c: r.c, a, b, n: r.n, h: r.h, s: r.s, bk: r.bk, ba: r.ba, ft: r.ft, ow: r.ow, f: r.f,
+      ag: r.ag || 0, mo: r.mo || 0, rt: r.rt || 0,
       m: r.m, sc: r.sc, res: r.r, L: r.L, g, st: r.st, ele, maxG: edgeMaxGrade(ele, r.st) });
     ADJ[a].push({ k, dir: 1 });
     ADJ[b].push({ k, dir: -1 });
@@ -115,9 +117,15 @@ function haversine(a, b) {
 
 function usable(k, dir, o) {
   const e = E[k];
-  if (e.f & CLOSED || e.bk === ACC.no) return false;
-  if ((e.bk === ACC.dismount || e.f & DISMOUNT || e.h === "steps") && o.avoidDismount) return false;
-  if ((e.ow === 1 && dir === -1) || (e.ow === -1 && dir === 1)) return false;
+  if (e.f & CLOSED) return false;
+  if (o.on === "foot") {
+    if (e.ft === ACC.no) return false;
+  } else {
+    if (e.bk === ACC.no) return false;
+    if ((e.bk === ACC.dismount || e.f & DISMOUNT || e.h === "steps") && o.avoidDismount) return false;
+    if ((e.ow === 1 && dir === -1) || (e.ow === -1 && dir === 1)) return false;
+    if (o.cls && ebikeRule(e, o.cls).v === "no") return false;
+  }
   if (o.avoidRoad && e.f & ROAD) return false;
   if (!surfaceOk(e, o.surface)) return false;
   if (!o.walk && e.L >= 100 && e.maxG > o.grade + 0.5) return false;
@@ -152,9 +160,30 @@ function targetShare(r, mode) {
   return 1;
 }
 
-function cost(k) {
+// ---------- e-bike rules by land manager (sources in index.json; see README) ----------
+const MOTOR_ONLY = new Set(["dnr", "wdfw", "usfs"]); // e-bikes only where motor vehicles may go
+
+function ebikeRule(e, cls) {
+  if (e.c === "road" || e.c === "join") return { v: "yes", src: "rcw-46-61-710" };
+  const ag = INFO.agencies[e.ag];
+  if (e.mo === 1) return { v: "yes", src: ag === "usfs" ? "usfs-ebike" : MOTOR_ONLY.has(ag) ? "dnr-ebike" : "rcw-46-61-710" };
+  if (MOTOR_ONLY.has(ag)) {
+    const src = ag === "usfs" ? "usfs-ebike" : "dnr-ebike";
+    return { v: e.mo === 2 ? "unknown" : "no", src };
+  }
+  if (ag === "wa-parks") return { v: cls === 2 ? "no" : "yes", src: "wsp-ebike" };
+  if (ag === "king-county") return { v: (e.rt || e.s === S_PAVED) && cls !== 3 ? "yes" : "no", src: "kcc-7" };
+  if (ag === "military") return { v: "no", src: "land" };
+  // state default (RCW 46.61.710): class 1/2 on shared-use paths; class 3 not unless allowed;
+  // no e-bikes on nonmotorized natural-surface trails unless the managing agency allows
+  if (e.s === S_DIRT) return { v: "no", src: "rcw-46-61-710" };
+  if (e.s === S_UNKNOWN && e.c === "path") return { v: "unknown", src: "rcw-46-61-710" };
+  return { v: cls === 3 ? "no" : "yes", src: "rcw-46-61-710" };
+}
+
+function cost(k, o) {
   const e = E[k];
-  let w = 1;
+  let w = 1 / surfaceWant(e, o.surface); // gravel/dirt rides route along that surface
   if (e.c === "road") w = ROAD_WEIGHT[e.h] || 2;
   else if (e.c === "join") w = 1.2;
   else if (e.bk === ACC.unknown) w = 1.3;
@@ -189,7 +218,7 @@ function walk(s, first, o, target, rng, greedy, needTwoWay) {
       if (!usable(nx.k, nx.dir, o) || (needTwoWay && !usable(nx.k, -nx.dir, o))) continue;
       const turn = Math.abs(((heading(nx.k, nx.dir, false) - h0 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
       const same = ce.n && E[nx.k].n === ce.n;
-      let w = Math.exp(-turn * 1.5) * (same ? 6 : 1) * surfaceWant(E[nx.k], o.surface) / (cost(nx.k) / Math.max(E[nx.k].L, 1));
+      let w = Math.exp(-turn * 1.5) * (same ? 6 : 1) * surfaceWant(E[nx.k], o.surface) / (cost(nx.k, o) / Math.max(E[nx.k].L, 1));
       opts.push({ nx, w, turn, same });
     }
     if (!opts.length) {
@@ -226,28 +255,30 @@ class Heap {
   get size() { return this.a.length; }
 }
 
-function routeBack(from, to, o, penalized, banFirst, limit) {
-  const goal = NX[to];
+/** Cheapest path from `from` to any node in `goals` (a Set), avoiding `penalized` edges where possible. */
+function routeBack(from, goals, o, penalized, banFirst, limit, target) {
+  const goal = target;
   const best = new Map([[from, 0]]), prev = new Map(), heap = new Heap();
+  let reached = null;
   heap.push([haversine(NX[from], goal), 0, from]);
   while (heap.size) {
     const [, g, n] = heap.pop();
-    if (n === to) break;
+    if (goals.has(n) && n !== from) { reached = n; break; }
     if (g > (best.get(n) ?? Infinity) || g > limit) continue;
     for (const nx of ADJ[n]) {
       if (n === from && nx.k === banFirst) continue; // no U-turn at the far point
       if (!usable(nx.k, nx.dir, o)) continue;
       const m = nx.dir === 1 ? E[nx.k].b : E[nx.k].a;
-      const ng = g + cost(nx.k) * (penalized.has(nx.k) ? 8 : 1);
+      const ng = g + cost(nx.k, o) * (penalized.has(nx.k) ? 8 : 1);
       if (ng < (best.get(m) ?? Infinity)) {
         best.set(m, ng); prev.set(m, [n, nx]);
         heap.push([ng + haversine(NX[m], goal), ng, m]);
       }
     }
   }
-  if (!prev.has(to)) return null;
+  if (reached === null) return null;
   const out = [];
-  for (let n = to; n !== from;) { const [p, nx] = prev.get(n); out.push(nx); n = p; }
+  for (let n = reached; n !== from;) { const [p, nx] = prev.get(n); out.push(nx); n = p; }
   return out.reverse();
 }
 
@@ -260,7 +291,7 @@ function shortestFrom(from, o, limit) {
     for (const nx of ADJ[n]) {
       if (!usable(nx.k, nx.dir, o)) continue;
       const m = nx.dir === 1 ? E[nx.k].b : E[nx.k].a;
-      const ng = g + cost(nx.k);
+      const ng = g + cost(nx.k, o);
       if (ng < (best.get(m) ?? Infinity)) { best.set(m, ng); prev.set(m, [n, nx]); heap.push([ng, 0, m]); }
     }
   }
@@ -331,8 +362,13 @@ function cutPoint(ele, o) {
   return null;
 }
 
+/** Grade above which a stretch is called out: the limit itself, capped per mode for "Any". */
+function steepThreshold(o) {
+  return Math.min(o.grade, o.on === "foot" ? 25 : o.surface === "dirt" ? 15 : 6);
+}
+
 function steepSpots(ele, o) {
-  const T = Math.min(o.grade, 6), out = [];
+  const T = steepThreshold(o), out = [];
   for (let i = 0; i + WIN < ele.length; i++) {
     const g = ele[i + WIN] - ele[i];
     if (Math.abs(g) <= T) continue;
@@ -406,7 +442,7 @@ function evaluate(route, o, meta) {
   let steep = steepSpots(ele, o);
   if (meta.shape === "out-and-back") steep = steep.filter((x) => x.at < sm.total / 2);
   let maxG = 0, maxRide = 0;
-  const T = Math.min(o.grade, 6);
+  const T = steepThreshold(o);
   for (let i = 0; i + WIN < ele.length; i++) {
     const g = Math.abs(ele[i + WIN] - ele[i]);
     maxG = Math.max(maxG, g);
@@ -416,7 +452,8 @@ function evaluate(route, o, meta) {
   const half = Math.floor(ele.length / 2);
   for (let i = 1; i < ele.length; i++) { const u = Math.max(0, ele[i] - ele[i - 1]); climb += u; if (i <= half) climbHalf += u; }
   const surf = [0, 0, 0, 0, 0];
-  let road = 0, dismount = 0, unconfirmed = 0, onetenM = 0, trailUnknown = 0;
+  let road = 0, dismount = 0, unconfirmed = 0, onetenM = 0, trailUnknown = 0, ebikeUnknown = 0;
+  const ebikeSources = new Set();
   for (let i = 1; i < sm.D.length; i++) {
     const step = sm.D[i] - sm.D[i - 1];
     surf[sm.S[i]] += step;
@@ -433,7 +470,16 @@ function evaluate(route, o, meta) {
   let retraced = 0, uturns = 0;
   route.forEach((h, i) => {
     const e = E[h.k];
-    if (e.n) names.set(e.n, { len: (names.get(e.n)?.len || 0) + (h.part ?? e.L), road: e.c === "road" });
+    if (o.cls) {
+      const rule = ebikeRule(e, o.cls);
+      ebikeSources.add(rule.src);
+      if (rule.v === "unknown") ebikeUnknown += h.part ?? e.L;
+    }
+    if (e.n) {
+      const prev = names.get(e.n);
+      // a name is a street only if every segment with it is a road (trails cross lots on service roads)
+      names.set(e.n, { len: (prev?.len || 0) + (h.part ?? e.L), road: (prev ? prev.road : true) && e.c === "road" });
+    }
     if (e.c === "join") joins++;
     nodes.add(e.a); nodes.add(e.b);
     if (used.has(h.k) && used.get(h.k) !== h.dir) retraced += h.part ?? e.L;
@@ -447,6 +493,7 @@ function evaluate(route, o, meta) {
     ...meta, length: sm.total, climb, climbOut: meta.shape === "out-and-back" ? climbHalf : climb,
     climbBack: meta.shape === "out-and-back" ? climb - climbHalf : 0,
     maxG, maxRide, steep, surf: surf.map((m) => m / span), road, dismount, unconfirmed, coarseElev: onetenM, trailUnknown,
+    ebikeUnknown, ebikeSources: [...ebikeSources],
     joins, retraced, uturns, names: rideNames(names),
     pois: pois.map((p) => p.k), _pois: pois, _sm: sm, _ele: ele,
   };
@@ -455,27 +502,27 @@ function evaluate(route, o, meta) {
 // ---------- generation ----------
 
 /**
- * "loop" if nothing is ridden twice; "lollipop" if the repeat is a stem from the start, ridden
- * out first and back last; null otherwise: an out-and-back (no loop at all), any U-turn, or
- * repeats away from the start beyond MAX_FAR_REPEAT_M (short connectors into a loop are fine).
+ * "loop" if nothing is ridden twice; "lollipop" if what repeats is near the parking end (ridden
+ * out early and back late, e.g. a shared climb between separate one-way in/out connectors);
+ * null for an out-and-back (no loop at all), any U-turn, or repeats away from the parking end
+ * beyond MAX_FAR_REPEAT_M (short connectors into a loop are fine).
  */
 function loopShape(route) {
-  let k = 0;
-  const n = route.length;
-  while (k < n / 2 && route[k].k === route[n - 1 - k].k && route[k].dir === -route[n - 1 - k].dir) k++;
-  const middle = route.slice(k, n - k);
-  if (!middle.length) return null;
-  const stem = new Set(route.slice(0, k).map((h) => h.k));
-  const seen = new Set();
-  let farRepeat = 0;
-  for (let i = 0; i < middle.length; i++) {
-    const h = middle[i];
-    if (i && middle[i - 1].k === h.k) return null; // U-turn
-    if (stem.has(h.k) || seen.has(h.k)) farRepeat += E[h.k].L;
-    seen.add(h.k);
+  const n = route.length, cum = [0];
+  for (const h of route) cum.push(cum[cum.length - 1] + E[h.k].L);
+  const total = cum[n], near = Math.max(STEM_NEAR_M, STEM_NEAR_SHARE * total);
+  const first = new Map();
+  let stem = 0, farRepeat = 0;
+  for (let i = 0; i < n; i++) {
+    const h = route[i];
+    if (i && route[i - 1].k === h.k) return null; // U-turn
+    if (!first.has(h.k)) { first.set(h.k, i); continue; }
+    const j = first.get(h.k);
+    if (route[j].dir === -h.dir && cum[j] <= near && total - cum[i + 1] <= near) stem += E[h.k].L;
+    else farRepeat += E[h.k].L;
   }
-  if (farRepeat > MAX_FAR_REPEAT_M) return null;
-  return k ? "lollipop" : "loop";
+  if (farRepeat > MAX_FAR_REPEAT_M || 2 * stem >= total) return null;
+  return stem ? "lollipop" : "loop";
 }
 
 function jaccard(a, b) {
@@ -491,20 +538,45 @@ function encode(route) {
 
 /** Nearest node within APPROACH_M of k (over any non-closed, non-private edge) that has a usable edge. */
 function startNode(k, o) {
-  if (ADJ[k].some((h) => usable(h.k, h.dir, o))) return { node: k, approach: 0 };
+  // gravel and dirt rides start where that surface begins; a lot often serves a paved trail too
+  const wanted = o.surface === "gravel" || o.surface === "dirt";
+  const good = (n) => ADJ[n].some((h) => usable(h.k, h.dir, o) && (!wanted || surfaceWant(E[h.k], o.surface) > 1));
+  if (good(k)) return { node: k, approach: 0 };
   const best = new Map([[k, 0]]), heap = new Heap();
   heap.push([0, 0, k]);
   while (heap.size) {
     const [d, , n] = heap.pop();
     if (d > best.get(n) || d > APPROACH_M) continue;
-    if (ADJ[n].some((h) => usable(h.k, h.dir, o))) return { node: n, approach: d };
+    if (good(n)) return { node: n, approach: d };
     for (const h of ADJ[n]) {
       if (E[h.k].f & CLOSED || E[h.k].bk === ACC.no) continue;
       const m = h.dir === 1 ? E[h.k].b : E[h.k].a, nd = d + E[h.k].L;
       if (nd < (best.get(m) ?? Infinity)) { best.set(m, nd); heap.push([nd, 0, m]); }
     }
   }
-  return null;
+  return wanted ? startNode(k, { ...o, surface: "any" }) : null;
+}
+
+/** Nodes within `radius` metres (straight line) of a point: where a loop may finish. Lot aisles
+ *  aren't in the network, so a trail back into the lot may not connect to the start by path. */
+const NODE_CELL = 0.002;
+let NODE_GRID = null;
+function nearNodes(pt, radius) {
+  if (!NODE_GRID) {
+    NODE_GRID = new Map();
+    NX.forEach((p, k) => {
+      const key = `${Math.floor(p[0] / NODE_CELL)},${Math.floor(p[1] / NODE_CELL)}`;
+      if (!NODE_GRID.has(key)) NODE_GRID.set(key, []);
+      NODE_GRID.get(key).push(k);
+    });
+  }
+  const out = new Map(), ci = Math.floor(pt[0] / NODE_CELL), cj = Math.floor(pt[1] / NODE_CELL);
+  for (let i = ci - 1; i <= ci + 1; i++) for (let j = cj - 2; j <= cj + 2; j++)
+    for (const k of NODE_GRID.get(`${i},${j}`) || []) {
+      const d = haversine(pt, NX[k]);
+      if (d <= radius && ADJ[k].length) out.set(k, d);
+    }
+  return out;
 }
 
 function ridesFrom(a, o) {
@@ -512,6 +584,7 @@ function ridesFrom(a, o) {
   const st = startNode(a.k, o);
   if (!st) return [];
   const s = st.node, cands = [];
+  const home = nearNodes([a.lat, a.lon], LOOP_CLOSE_M), homeSet = new Set(home.keys());
   const minM = o.min * 1609.34, maxM = o.max * 1609.34;
   const starts = ADJ[s].filter((h) => usable(h.k, h.dir, o));
   if (o.diag) o.diag.push(`start node ${a.node} (approach ${st.approach.toFixed(0)} m): ` + ADJ[s].map((h) =>
@@ -551,13 +624,14 @@ function ridesFrom(a, o) {
         if (len >= minM && len <= maxM && loopShape(out)) cands.push({ route: out, shape: loopShape(out) });
         continue;
       }
-      const back = routeBack(at, s, o, new Set(out.map((h) => h.k)), far.k, maxM * 1.5);
+      const back = routeBack(at, homeSet, o, new Set(out.map((h) => h.k)), far.k, maxM * 1.5, NX[s]);
       if (!back) continue;
       const route = out.concat(back);
       const len = route.reduce((x, h) => x + E[h.k].L, 0);
       const shape = loopShape(route);
       if (len < minM || len > maxM || !shape) continue;
-      cands.push({ route, shape });
+      const last = back[back.length - 1];
+      cands.push({ route, shape, endGap: home.get(last.dir === 1 ? E[last.k].b : E[last.k].a) || 0 });
     }
   }
 
@@ -572,8 +646,10 @@ function ridesFrom(a, o) {
       return d;
     };
     const bins = new Map();
+    const wanted = o.surface === "gravel" || o.surface === "dirt";
     for (const n of prev.keys()) {
       if (n === s) continue;
+      if (wanted && !ADJ[n].some((h) => surfaceWant(E[h.k], o.surface) > 1)) continue;
       const d = distOf(n);
       if (d < minM * 0.3 || d > maxM * 0.5) continue;
       const brg = Math.atan2(NX[n][0] - NX[s][0], (NX[n][1] - NX[s][1]) * Math.cos(NX[s][0] * Math.PI / 180));
@@ -587,13 +663,14 @@ function ridesFrom(a, o) {
       for (let n = t; n !== s;) { const [p, nx] = prev.get(n); out.push(nx); n = p; }
       out.reverse();
       const far = out[out.length - 1];
-      const back = routeBack(t, s, o, new Set(out.map((h) => h.k)), far.k, maxM * 1.5);
+      const back = routeBack(t, homeSet, o, new Set(out.map((h) => h.k)), far.k, maxM * 1.5, NX[s]);
       if (!back) continue;
       const route = out.concat(back);
       const len = route.reduce((x, h) => x + E[h.k].L, 0);
       const shape = loopShape(route);
       if (len < minM || len > maxM || !shape) continue;
-      cands.push({ route, shape });
+      const last = back[back.length - 1];
+      cands.push({ route, shape, endGap: home.get(last.dir === 1 ? E[last.k].b : E[last.k].a) || 0 });
     }
   }
 
@@ -613,7 +690,8 @@ function ridesFrom(a, o) {
   const kept = [];
   for (const c of cands) {
     if (!c.route.length) continue;
-    const r = evaluate(c.route, o, { shape: c.shape, why: c.why, start: a.idx, end: c.end?.idx, approach: st.approach });
+    const r = evaluate(c.route, o, { shape: c.shape, why: c.why, start: a.idx, end: c.end?.idx, approach: st.approach,
+      endGap: c.endGap || 0 });
     if (r.length < MIN_RIDE_M) continue;
     if (c.shape !== "out-and-back") {
       if (!o.walk && r.maxG > o.grade) continue;
@@ -732,8 +810,16 @@ function decodeRoute(code) {
 // ---------- messages ----------
 
 let OPTS = null, currentGen = 0;
+
+/** Options from the page: `on` (foot, bike, e1-e3) sets legality, `terrain` the surface preference. */
+function normalize(o) {
+  if (!o) return o;
+  const on = o.on || "e1";
+  return { ...o, on, cls: /^e[123]$/.test(on) ? Number(on[1]) : 0, surface: o.terrain || o.surface || "groomed" };
+}
 onmessage = async (ev) => {
   const m = ev.data;
+  if (m.opts) m.opts = normalize(m.opts);
   if (m.type === "load") {
     await load(m.center, m.radius);
     postMessage({ type: "loaded", access: ACCESS, info: INFO, edges: E.length,
@@ -742,7 +828,9 @@ onmessage = async (ev) => {
     OPTS = m.opts;
     const gen = m.gen;
     currentGen = gen; // a newer "generate" message bumps this and stops the loop below
-    const order = ACCESS.slice().sort((x, y) => x.near - y.near);
+    // parking that only serves dirt or hiking trails can't start a paved/groomed bike ride
+    const easyOnly = OPTS.on !== "foot" && (OPTS.surface === "paved" || OPTS.surface === "groomed");
+    const order = ACCESS.filter((a) => !easyOnly || a.kind !== "trail").sort((x, y) => x.near - y.near);
     for (let i = 0; i < order.length; i++) {
       if (gen !== currentGen) return;
       const rides = ridesFrom(order[i], OPTS).map(summary);

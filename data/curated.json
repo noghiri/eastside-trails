@@ -92,6 +92,41 @@
       "title": "City of Bellevue: Newcastle Beach Park",
       "url": "https://parks.bellevuewa.gov/parks-and-trails/parks/newcastle-beach-park/",
       "checked": "2026-11-03"
+    },
+    "kcc-7": {
+      "title": "King County Code Title 7 (7.12.315 trail use; 7.01.010 definitions)",
+      "url": "https://aqua.kingcounty.gov/council/clerk/code/10_Title_7.htm",
+      "checked": "2026-11-03"
+    },
+    "dnr-ebike": {
+      "title": "WA DNR: E-bike Rules and Regulations",
+      "url": "https://dnr.wa.gov/recreation/recreation-planning/e-bike-rules-and-regulations",
+      "checked": "2026-11-03"
+    },
+    "dnr-wdfw-ebike-report": {
+      "title": "E-Bike Use on DNR- and WDFW-Managed Lands (report to the Legislature, 2022)",
+      "url": "https://dnr.wa.gov/publications/amp_ebike_legislative_report.pdf",
+      "checked": "2026-11-03"
+    },
+    "wsp-ebike": {
+      "title": "WA State Parks: E-bike information sheet",
+      "url": "https://parks.wa.gov/sites/default/files/2024-07/E-Bike%20Information%20Sheet.pdf",
+      "checked": "2026-11-03"
+    },
+    "rcw-46-61-710": {
+      "title": "RCW 46.61.710 (where e-bikes may operate)",
+      "url": "https://app.leg.wa.gov/rcw/default.aspx?cite=46.61.710",
+      "checked": "2026-11-03"
+    },
+    "usfs-ebike": {
+      "title": "US Forest Service (Willamette NF): e-bikes are motor vehicles; motorized routes only",
+      "url": "https://www.fs.usda.gov/r06/willamette/maps-guides/motor-vehicle-use-map-mvum",
+      "checked": "2026-11-03"
+    },
+    "land": {
+      "title": "Land ownership: WA DNR Managed Land Parcels, WA DNR Non-DNR Major Public Lands, King County GIS Parks in King County, OpenStreetMap",
+      "url": "https://data-wadnr.opendata.arcgis.com/",
+      "checked": "2026-11-03"
     }
   },
   "trails": {

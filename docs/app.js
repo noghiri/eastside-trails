@@ -2,8 +2,22 @@
 
 const NEWCASTLE = [47.5301, -122.1557];
 const MI = 1609.34, FT = 3.28084;
-const TIERS = [2, 4, 6, Infinity];
-const TIER_LABELS = ["≤2%", "2–4%", "4–6%", ">6%"];
+// "on" (what you travel on) sets legality; "terrain" sets the surface preference; presets fill both
+const PRESETS = {
+  easy: { on: "e1", terrain: "groomed" },
+  gravel: { on: "e1", terrain: "gravel" },
+  mtb: { on: "bike", terrain: "dirt" },
+  emtb: { on: "e1", terrain: "dirt" },
+  hike: { on: "foot", terrain: "any" },
+};
+/** Grade tiers (% over 100 m) for what you're on and where. */
+function tiersFor(on, terrain) {
+  if (on === "foot") return [8, 15, 25];
+  if (terrain === "dirt") return [6, 10, 15];
+  return [2, 4, 6];
+}
+let TIERS = [2, 4, 6, Infinity];
+let TIER_LABELS = [];
 const MAP_TIERS = ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]; // map tiles are light in both themes
 
 const $ = (s) => document.querySelector(s);
@@ -32,7 +46,18 @@ function init() {
   if (link?.o) applyFilters(link.o);
   if (link?.center) { center = link.center; centerName = link.centerName || "map point"; }
   document.querySelectorAll(".filters input, .filters select").forEach((el) =>
-    el.addEventListener("change", () => (el.id === "radius" ? load() : generate())));
+    el.addEventListener("change", () => {
+      if (el.id === "radius") return load();
+      if (el.id === "preset") applyPreset(el.value);
+      if (el.id === "on" || el.id === "surface") {
+        document.querySelector('input[name="grade"][value="1"]').checked = true; // tiers just changed
+        syncPreset();
+      }
+      updateUI();
+      generate();
+    }));
+  syncPreset();
+  updateUI();
   $("#pickCenter").addEventListener("click", () => {
     document.body.classList.add("picking");
     $("#count").textContent = "Click the map to set the search center.";
@@ -83,15 +108,54 @@ function onWorker(ev) {
 
 // ---------- filters ----------
 
+const isFoot = () => $("#on").value === "foot";
+
+function gradeIndex() {
+  return +document.querySelector('input[name="grade"]:checked').value;
+}
+
+function selectedGrade() {
+  const gi = gradeIndex();
+  return gi < 3 ? tiersFor($("#on").value, $("#surface").value)[gi] : 99;
+}
+
+/** Grade tier labels and which controls apply, for what you're on and the terrain. */
+function updateUI() {
+  const tiers = tiersFor($("#on").value, $("#surface").value);
+  TIERS = [...tiers, Infinity];
+  TIER_LABELS = [`≤${tiers[0]}%`, `${tiers[0]}–${tiers[1]}%`, `${tiers[1]}–${tiers[2]}%`, `>${tiers[2]}%`];
+  document.querySelectorAll('input[name="grade"]').forEach((el, i) => {
+    if (i < 3) el.parentElement.querySelector(".g").textContent = `≤${tiers[i]}%`;
+  });
+  $("#walkBox").hidden = isFoot();
+  $("#avoidDismount").parentElement.hidden = isFoot();
+}
+
+function applyPreset(name) {
+  const p = PRESETS[name];
+  if (!p) return;
+  $("#on").value = p.on;
+  $("#surface").value = p.terrain;
+  document.querySelector('input[name="grade"][value="1"]').checked = true;
+  $("#walk").checked = false;
+}
+
+/** Show the preset that matches On + Terrain, or "Custom". */
+function syncPreset() {
+  const name = Object.keys(PRESETS).find((k) => PRESETS[k].on === $("#on").value && PRESETS[k].terrain === $("#surface").value);
+  $("#preset").value = name || "custom";
+}
+
 function opts() {
+  const on = $("#on").value, terrain = $("#surface").value, gi = gradeIndex();
   const o = {
-    grade: +document.querySelector('input[name="grade"]:checked').value,
+    on, terrain, gradeIndex: gi,
+    grade: selectedGrade(),
     min: Math.max(0, +$("#minLen").value || 0),
     max: Math.max(0.5, +$("#maxLen").value || 10),
-    surface: $("#surface").value,
     avoidDismount: $("#avoidDismount").checked,
     avoidRoad: $("#avoidRoad").checked,
-    walk: $("#walk").checked,
+    walk: on !== "foot" && $("#walk").checked,
     walkMax: Math.max(10, +$("#walkMax").value || 200),
     shapes: { outback: $("#shapeOutback").checked, loop: $("#shapeLoop").checked, oneway: $("#shapeOneway").checked },
     radius: +$("#radius").value || 30,
@@ -107,11 +171,23 @@ function loadFilters() {
   if (o) applyFilters(o);
 }
 
+const ON_VALUES = ["foot", "bike", "e1", "e2", "e3"];
+const TERRAINS = ["paved", "groomed", "gravel", "dirt", "any"];
+
 function applyFilters(o) {
-  const el = document.querySelector(`input[name="grade"][value="${o.grade}"]`);
+  // older settings and links used mode/ebike/cls/surface
+  const on = o.on || (o.mode === "hike" ? "foot" : o.mode === "mtb" && !o.ebike ? "bike" : `e${o.cls || 1}`);
+  const terrain = o.terrain || o.surface;
+  if (ON_VALUES.includes(on)) $("#on").value = on;
+  if (TERRAINS.includes(terrain)) $("#surface").value = terrain;
+  const tiers = tiersFor($("#on").value, $("#surface").value);
+  const gi = o.gradeIndex ?? (tiers.indexOf(o.grade) >= 0 ? tiers.indexOf(o.grade) : o.grade >= 99 ? 3 : 1);
+  const el = document.querySelector(`input[name="grade"][value="${gi}"]`);
   if (el) el.checked = true;
-  $("#minLen").value = o.min; $("#maxLen").value = o.max; $("#surface").value = o.surface;
-  $("#avoidDismount").checked = o.avoidDismount; $("#avoidRoad").checked = o.avoidRoad;
+  if (o.min !== undefined) $("#minLen").value = o.min;
+  if (o.max !== undefined) $("#maxLen").value = o.max;
+  if (o.avoidDismount !== undefined) $("#avoidDismount").checked = o.avoidDismount;
+  if (o.avoidRoad !== undefined) $("#avoidRoad").checked = o.avoidRoad;
   $("#walk").checked = !!o.walk; $("#walkMax").value = o.walkMax || 200;
   if (o.shapes) {
     $("#shapeOutback").checked = o.shapes.outback; $("#shapeLoop").checked = o.shapes.loop; $("#shapeOneway").checked = o.shapes.oneway;
@@ -120,12 +196,16 @@ function applyFilters(o) {
   if (o.sort) $("#sort").value = o.sort;
 }
 
-/** Short form: #r=<ride>&g=<grade>[&w=<walk m>]; older links carry a JSON object. */
+/** Short form: #r=<ride>&v=<on>&t=<terrain>&g=<grade>[&w=<walk m>]. Older short links used
+ *  m/c/e (mode, class, e-MTB flag); the oldest links carry a JSON object. */
+const OLD_MODE = { e: "ebike", m: "mtb", h: "hike" };
 function parseHash() {
   const h = location.hash.slice(1);
   if (h.startsWith("r=")) {
     const q = new URLSearchParams(h);
-    const o = { ...opts(), grade: +q.get("g") || 4, walk: q.has("w"), walkMax: +q.get("w") || 200 };
+    const o = { grade: +q.get("g") || 4, walk: q.has("w"), walkMax: +q.get("w") || 200 };
+    if (q.has("v")) Object.assign(o, { on: q.get("v"), terrain: q.get("t") || undefined });
+    else Object.assign(o, { mode: OLD_MODE[q.get("m")] || "ebike", cls: +q.get("c") || 1, ebike: q.has("e") });
     return { short: q.get("r"), o };
   }
   try { return JSON.parse(decodeURIComponent(h)); } catch (e) { return null; }
@@ -158,8 +238,7 @@ function renderList(progress) {
   rides.sort(sorters[sort]);
   $("#count").textContent = (rides.length
     ? `${rides.length} ride${rides.length === 1 ? "" : "s"}. Distances are straight-line from ${centerName}.`
-    : progress ? "" : "No rides match. Try a higher grade limit, a shorter minimum, or allowing walk-ups.") + (progress ? ` ${progress}` : "") +
-    ($("#surface").value === "dirt" ? " Dirt rides don't check e-bike rules yet: most King County backcountry and DNR singletrack (e.g. Tiger Mountain, Raging River) is closed to e-bikes of every class." : "");
+    : progress ? "" : "No rides match. Try a higher grade limit, a shorter minimum, or allowing walk-ups.") + (progress ? ` ${progress}` : "") ;
   const ol = $("#rides");
   ol.innerHTML = rides.slice(0, shown).map((r, k) =>
     `<li tabindex="0" data-k="${k}" aria-selected="${r.code === selectedCode}">${rideSummary(r)}</li>`).join("") +
@@ -197,7 +276,7 @@ function badges(r) {
   const b = [];
   if (r.steep.length) {
     const g = Math.max(...r.steep.map((x) => x.g));
-    const word = $("#walk").checked && r.maxRide <= (+document.querySelector('input[name="grade"]:checked').value) ? "walk-up" : "steep spot";
+    const word = !isFoot() && $("#walk").checked && r.maxRide <= selectedGrade() ? "walk-up" : "steep spot";
     b.push(`<span class="badge warn">⚠ ${r.steep.length} ${word}${r.steep.length > 1 ? "s" : ""}, up to ${g.toFixed(1)}%</span>`);
   }
   const pct = (x) => Math.round(x * 100);
@@ -206,8 +285,9 @@ function badges(r) {
   if (r.surf[4] > 0.05) b.push(`<span class="badge">${pct(r.surf[4])}% dirt</span>`);
   if (r.surf[3] > 0.05) b.push(`<span class="badge warn">surface not mapped ${pct(r.surf[3])}%</span>`);
   if (r.road > 20) b.push(`<span class="badge warn">on-street ${Math.round(r.road * FT)} ft</span>`);
-  if (r.dismount > 0) b.push(`<span class="badge warn">dismount section</span>`);
-  if (r.unconfirmed > 20) b.push(`<span class="badge warn">bike access not confirmed ${Math.round(r.unconfirmed * FT)} ft</span>`);
+  if (!isFoot() && r.dismount > 0) b.push(`<span class="badge warn">dismount section</span>`);
+  if (!isFoot() && r.unconfirmed > 20) b.push(`<span class="badge warn">bike access not confirmed ${Math.round(r.unconfirmed * FT)} ft</span>`);
+  if (r.ebikeUnknown > 20) b.push(`<span class="badge warn">e-bike rules unknown ${Math.round(r.ebikeUnknown * FT)} ft</span>`);
   if (r.joins) b.push(`<span class="badge">${r.joins} unmapped link${r.joins > 1 ? "s" : ""}</span>`);
   if (r.coarseElev > 100) b.push(`<span class="badge">10 m elevation on ${Math.round(r.coarseElev / r.length * 100)}%</span>`);
   const kinds = new Set(r.pois);
@@ -257,7 +337,7 @@ function requestDetail(w) {
 
 function shareUrl(r) {
   const o = opts();
-  const q = `r=${r.short}&g=${o.grade}${o.walk ? `&w=${o.walkMax}` : ""}`;
+  const q = `r=${r.short}&v=${o.on}&t=${o.terrain}&g=${o.grade}` + (o.walk ? `&w=${o.walkMax}` : "");
   return `${location.origin}${location.pathname}#${q}`;
 }
 
@@ -283,6 +363,12 @@ function drawRide(ride) {
     while (i < ride.d.length - 1 && ride.d[i] < dist) i++;
     return [ride.lat[i], ride.lon[i]];
   };
+  // where to start, turn around and finish
+  const mark = (pt, cls, text) => L.marker(pt, { icon: L.divIcon({ className: "route-mark-wrap", html: `<span class="route-mark ${cls}">${text}</span>`, iconSize: [0, 0] }),
+    zIndexOffset: 1000, title: text }).addTo(rideLayer);
+  mark(ll[0], "start", "▶ Start");
+  if (ride.shape === "out-and-back") mark(at(ride.length / 2), "turn", "↺ Turn around");
+  else if (ride.shape === "one-way" || ride.endGap > 30) mark(ll[ll.length - 1], "finish", "■ Finish");
   for (const x of ride.steep)
     L.marker(at(x.at + x.len / 2), { icon: L.divIcon({ className: "steep-icon", html: `⚠ ${x.g.toFixed(1)}%`, iconSize: [58, 18] }) })
       .bindTooltip(`${x.g.toFixed(1)}% for about ${Math.round((x.len * FT) / 10) * 10} ft (${x.shape})`).addTo(rideLayer);
@@ -357,6 +443,7 @@ function showDetail(r) {
     <div class="badges">${badges(r)}</div>
     ${r.offLimits > 0 ? `<p class="closure-note"><strong>This ride uses about ${Math.round(r.offLimits * FT / 10) * 10} ft of paths that are closed or not open to bikes</strong> (private grounds such as golf courses, or closures). The map data was updated after this link was made; pick another ride.</p>` : ""}
     ${r.approach > 1 ? `<p class="muted">The ride starts about ${Math.round(r.approach * FT / 10) * 10} ft from the parking spot.</p>` : ""}
+    ${r.endGap > 1 ? `<p class="muted">The loop finishes about ${Math.round(r.endGap * FT / 10) * 10} ft from where it started.</p>` : ""}
     ${steepHtml(r)}
     <h3>Elevation and grade</h3>
     <div class="profile-wrap"><svg class="profile" role="img" aria-label="Elevation profile: ${(r.length / MI).toFixed(1)} miles, max grade ${r.maxG.toFixed(1)} percent"></svg><div class="tip" hidden></div></div>
@@ -365,6 +452,7 @@ function showDetail(r) {
     ${r.short ? `<button type="button" class="btn" id="shareBtn">Share this ride</button>` : ""}
     <a class="btn ghost" id="gpxBtn" href="#">Download ride GPX</a>
     <p class="muted" id="shareMsg" aria-live="polite"></p>
+    ${r.ebikeSources?.length ? `<p class="muted">E-bike rules applied (class ${$("#on").value.slice(1)}): ${r.ebikeSources.map(srcLink).join(", ")}. Rules are by land manager; obey posted signs.</p>` : ""}
     <h3>Parking</h3>
     ${parkingHtml(ACCESS[r.start])}${r.end !== undefined && r.end !== null && ACCESS[r.end] ? parkingHtml(ACCESS[r.end]) : ""}
     ${trailInfoHtml(r)}`;

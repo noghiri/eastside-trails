@@ -5,6 +5,14 @@ Newcastle, WA, aimed at finding easy rides for a new rider on a class 1/2 e-bike
 
 Site: https://noghiri.github.io/eastside-trails/
 
+- Choose what you're on (e-bike class 1/2/3, bicycle, on foot) and the terrain (paved, groomed,
+  gravel, dirt trail, any), or a preset (Easy ride, Gravel ride, Mountain bike, E-MTB, Hike).
+  "On" decides legality; "terrain" decides preference.
+- E-bike rules by land manager and class, each with its source: King County (KCC 7.12.315:
+  regional trails and paved pathways only), WA DNR and WDFW (motorized trails and roads only),
+  WA State Parks (class 1 and 3 on bike trails, class 2 on roads), US Forest Service (motorized
+  routes only), otherwise the state defaults in RCW 46.61.710. Land ownership comes from WA DNR,
+  King County GIS and OpenStreetMap.
 - Ride finder over a routable path network: out-and-back, loop, lollipop and one-way rides
   from parking points, respecting one-way trails; "no turnarounds" means no U-turns.
 - Strict grade tiers (≤2/≤4/≤6%) or short walk-ups, with steep spots called out.
@@ -52,6 +60,7 @@ python elevate.py run    # resumable; 1 m lidar for bike-relevant edges, 10 m el
 python elevate.py merge  # bridge handling (levelled approaches, chained spans)
 python validate.py       # compare against the pilot trails
 python parking.py        # trail parking found automatically (unverified, likely/possible tiers)
+python land.py           # land ownership for e-bike rules (WA DNR, King County GIS, OSM)
 python tiles.py          # docs/net/index.json + 0.1-degree tiles
 ```
 

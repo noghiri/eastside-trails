@@ -102,6 +102,27 @@ def flags(t):
     return f
 
 
+# King County regional trails named in KCC 7.01.010 (class 1/2 e-bikes allowed, KCC 7.12.315.C)
+KC_REGIONAL_TRAILS = {n.lower() for n in (
+    "Burke-Gilman Trail", "Cedar River Trail", "East Lake Sammamish Trail", "Eastrail", "Foothills Trail",
+    "Green to Cedar Rivers Trail", "Issaquah-Preston Trail", "Lake to Sound Trail", "Marymoor Connector Trail",
+    "Preston-Snoqualmie Trail", "Sammamish River Trail", "Snoqualmie Valley Trail", "Soos Creek Trail")}
+
+
+def motor_open(t):
+    """1 = open to public motor vehicles, 0 = not, 2 = unknown (untagged track)."""
+    for key in ("motor_vehicle", "motorcycle", "vehicle", "access"):
+        v = t.get(key)
+        if v in YES:
+            return 1
+        if v in ("no", "private", "forestry", "agricultural", "permit"):
+            return 0
+    h = t.get("highway")
+    if h in ROADS:
+        return 1
+    return 2 if h == "track" else 0
+
+
 def precise_elevation(t, curated_names=()):
     """Edges that get 1 m elevation: everything easy-bike mode might use, including sections
     that are closed or walk-only today (closures reopen; steep walk-ups need accurate grades),

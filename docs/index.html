@@ -10,10 +10,31 @@
 <body>
 <header>
   <h1>Eastside Trails</h1>
-  <p class="sub">Easy bike rides from parking spots near you: out-and-backs, loops and one-ways, checked against your grade limit using 1 m lidar elevation.</p>
+  <p class="sub">Rides and hikes from parking spots near you: out-and-backs, loops and one-ways, checked against your grade limit and, on an e-bike, the managing agency's e-bike rules.</p>
 </header>
 
 <section class="filters" aria-label="Ride filters">
+  <fieldset>
+    <legend>Preset</legend>
+    <select id="preset">
+      <option value="easy">Easy ride</option>
+      <option value="gravel">Gravel ride</option>
+      <option value="mtb">Mountain bike</option>
+      <option value="emtb">E-MTB</option>
+      <option value="hike">Hike</option>
+      <option value="custom" disabled>Custom</option>
+    </select>
+  </fieldset>
+  <fieldset>
+    <legend>On</legend>
+    <select id="on">
+      <option value="e1">E-bike, class 1 (pedal-assist)</option>
+      <option value="e2">E-bike, class 2 (throttle)</option>
+      <option value="e3">E-bike, class 3 (28 mph)</option>
+      <option value="bike">Bicycle (no motor)</option>
+      <option value="foot">On foot</option>
+    </select>
+  </fieldset>
   <fieldset class="checks">
     <legend>Ride shapes</legend>
     <label><input type="checkbox" id="shapeOutback" checked> Out-and-back</label>
@@ -22,10 +43,10 @@
   </fieldset>
   <fieldset class="seg">
     <legend>Max grade</legend>
-    <label><input type="radio" name="grade" value="2"> ≤2%</label>
-    <label><input type="radio" name="grade" value="4" checked> ≤4%</label>
-    <label><input type="radio" name="grade" value="6"> ≤6%</label>
-    <label><input type="radio" name="grade" value="99"> Any</label>
+    <label><input type="radio" name="grade" value="0"> <span class="g"></span></label>
+    <label><input type="radio" name="grade" value="1" checked> <span class="g"></span></label>
+    <label><input type="radio" name="grade" value="2"> <span class="g"></span></label>
+    <label><input type="radio" name="grade" value="3"> Any</label>
   </fieldset>
   <fieldset class="len">
     <legend>Ride length (mi)</legend>
@@ -33,21 +54,21 @@
     <label>Max <input type="number" id="maxLen" value="10" min="0.5" step="0.5"></label>
   </fieldset>
   <fieldset>
-    <legend>Surface</legend>
+    <legend>Terrain</legend>
     <select id="surface">
       <option value="groomed">Paved + groomed gravel</option>
       <option value="paved">Paved only</option>
-      <option value="gravel">Gravel ride (mostly gravel)</option>
-      <option value="dirt">Dirt ride (mostly dirt trail)</option>
+      <option value="gravel">Mostly gravel</option>
+      <option value="dirt">Mostly dirt trail</option>
       <option value="any">Any surface</option>
     </select>
   </fieldset>
-  <fieldset class="checks">
+  <fieldset class="checks" id="avoidBox">
     <legend>Avoid</legend>
     <label><input type="checkbox" id="avoidDismount" checked> Dismount sections</label>
     <label><input type="checkbox" id="avoidRoad"> On-street sections</label>
   </fieldset>
-  <fieldset class="checks">
+  <fieldset class="checks" id="walkBox">
     <legend>Steep spots</legend>
     <label><input type="checkbox" id="walk"> Allow short walk-ups</label>
     <label>up to <input type="number" id="walkMax" value="200" min="10" step="50" style="width:4.5em"> m</label>

@@ -104,3 +104,8 @@ footer { color: var(--ink-2); font-size: .8rem; border-top: 1px solid var(--line
 .p-icon.unverified { background: #6b6a65; }
 .closure-note { color: var(--critical); }
 #rides li.more { border: 0; background: none; padding: 0; text-align: center; cursor: default; }
+.route-mark-wrap { background: none; border: 0; }
+.route-mark { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); background: #fff; color: #0b0b0b; border: 2px solid #0b0b0b; border-radius: 999px; font: 700 11px/16px system-ui; padding: 0 6px; white-space: nowrap; }
+.route-mark.start { border-color: #0ca30c; }
+.route-mark.turn { border-color: #eb6834; }
+.route-mark.finish { border-color: #0b0b0b; }
