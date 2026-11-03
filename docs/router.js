@@ -7,7 +7,7 @@ const ACC = { no: 0, yes: 1, dismount: 2, unknown: 3 };
 const ROAD_WEIGHT = { living_street: 1.3, service: 1.5, residential: 1.5, unclassified: 1.8, tertiary: 2.5,
   tertiary_link: 2.5, secondary: 4, secondary_link: 4, primary: 6, primary_link: 6, trunk: 10, trunk_link: 10 };
 const UNKNOWN_SURFACE_OK = new Set(["cycleway", "footway", "pedestrian"]); // usually paved when untagged
-const RES = 10, WIN = 10, APPROACH_M = 250, MIN_RIDE_M = 300; // resample spacing (m), grade window in samples (100 m)
+const RES = 10, WIN = 10, APPROACH_M = 250, MIN_RIDE_M = 300, SHORT_LINK_M = 30; // resample spacing (m), grade window in samples (100 m)
 
 let E = [];          // edges
 let nodeIdx = new Map(), NX = [], ADJ = []; // node id -> index, coords, adjacency [{k, dir}]
@@ -118,7 +118,8 @@ function usable(k, dir, o) {
   if (o.surface !== "any") {
     if (e.s === 2) return false;
     if (e.s === 1 && o.surface === "paved") return false;
-    if (e.s === 3 && !(UNKNOWN_SURFACE_OK.has(e.h) || e.c !== "path")) return false;
+    // untagged paths are usually dirt, but very short ones are crossings and links between paths
+    if (e.s === 3 && !(UNKNOWN_SURFACE_OK.has(e.h) || e.c !== "path" || e.L < SHORT_LINK_M)) return false;
   }
   if (!o.walk && e.L >= 100 && e.maxG > o.grade + 0.5) return false;
   return true;

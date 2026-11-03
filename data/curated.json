@@ -403,16 +403,16 @@
       ],
       "access": [
         {
-          "name": "Lake Sammamish State Park",
+          "name": "Lake Sammamish State Park: Tibbetts Beach lot",
           "address": "2182 NW Sammamish Rd, Issaquah, WA 98027",
           "address_source": "wsp-lssp",
           "source": "wsp-lssp",
           "locate": {
-            "geocode": "2182 NW Sammamish Rd, Issaquah, WA 98027"
+            "osm": "way/133068206"
           },
           "pass": "discover",
           "pass_source": "wsp-lssp",
-          "notes": "Park hours 6:30 a.m. to dusk; restrooms and drinking water listed by State Parks."
+          "notes": "Beach lot by the playground (OSM: 250 spaces). Address shown is the park's address. Park hours 6:30 a.m. to dusk; restrooms and drinking water listed by State Parks."
         }
       ]
     }

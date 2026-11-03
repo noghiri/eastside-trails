@@ -21,7 +21,9 @@ MAX_JOIN = 25.0
 
 
 def is_stub(t):
-    return t["highway"] == "footway" and t.get("footway") in ("crossing", "access_aisle", "traffic_island")
+    # crosswalks stay: they're often the only link between paths on either side of a road;
+    # ones that only joined (dropped) sidewalks fall out with the tiny-fragment filter
+    return t["highway"] == "footway" and t.get("footway") in ("access_aisle", "traffic_island")
 
 
 def components(edges):
@@ -77,26 +79,9 @@ def join_gaps(paths, comp, max_gap=MAX_JOIN):
     return joins
 
 
-def main(region="newcastle"):
-    raw = json.loads((ROOT / "cache" / f"network-{region}.json").read_text())
-    paths = [e for e in raw["edges"] if e["cls"] == "path" and not is_stub(e["tags"])]
-    roads = [e for e in raw["edges"] if e["cls"] == "road" and classify.bike(e["tags"])[0] != "no"]
-
-    comp = components(paths)
-    size = {}
-    for e in paths:
-        size[comp[e["a"]]] = size.get(comp[e["a"]], 0) + e["len_m"]
-    paths = [e for e in paths if size[comp[e["a"]]] >= MIN_COMPONENT]
-    paths += join_gaps(paths, comp)
-    path_nodes = {n for e in paths for n in (e["a"], e["b"])}
-
-    radj = {}
-    for e in roads:
-        radj.setdefault(e["a"], []).append((e["b"], e))
-        radj.setdefault(e["b"], []).append((e["a"], e))
-    seeds = [n for n in path_nodes if n in radj]
-    keep = {}
-    for s in seeds:
+def connect(radj, comp, path_nodes, keep):
+    """Keep road edges on short (<= MAX_CONNECTOR) road links between different components."""
+    for s in (n for n in path_nodes if n in radj):
         best, prev, heap = {s: 0.0}, {}, [(0.0, s)]
         while heap:
             d, n = heapq.heappop(heap)
@@ -114,7 +99,36 @@ def main(region="newcastle"):
                     best[m], prev[m] = nd, (n, e)
                     heapq.heappush(heap, (nd, m))
 
+
+def main(region="newcastle"):
+    raw = json.loads((ROOT / "cache" / f"network-{region}.json").read_text())
+    paths = [e for e in raw["edges"] if e["cls"] == "path" and not is_stub(e["tags"])]
+    roads = [e for e in raw["edges"] if e["cls"] == "road" and classify.bike(e["tags"])[0] != "no"]
+
+    comp = components(paths)
+    size = {}
+    for e in paths:
+        size[comp[e["a"]]] = size.get(comp[e["a"]], 0) + e["len_m"]
+    paths = [e for e in paths if size[comp[e["a"]]] >= MIN_COMPONENT]
+    paths += join_gaps(paths, comp)
+    path_nodes = {n for e in paths for n in (e["a"], e["b"])}
+
+    radj = {}
+    for e in roads:
+        radj.setdefault(e["a"], []).append((e["b"], e))
+        radj.setdefault(e["b"], []).append((e["a"], e))
+    keep = {}
+    # links are found twice: between parts of the whole path network, and between parts of the
+    # easy-bike subset, whose parts may only be joined elsewhere by dirt paths (a paved park
+    # path that meets the park road on both sides is the typical case)
+    easy = [e for e in paths if classify.bike(e["tags"])[0] != "no" and classify.surface(e["tags"]) != "rough"
+            and not classify.flags(e["tags"]) & classify.CLOSED]
+    for graph_comp, nodes in ((comp, path_nodes), (components(easy), {n for e in easy for n in (e["a"], e["b"])})):
+        connect(radj, graph_comp, nodes, keep)
+
     edges = paths + list(keep.values())
+
+
     used = {n for e in edges for n in (e["a"], e["b"])}
     out = ROOT / "cache" / f"pruned-{region}.json"
     out.write_text(json.dumps({"region": region, "bbox": raw["bbox"],

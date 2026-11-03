@@ -37,6 +37,8 @@ def _access(t, key, defaults):
         return "no", False
     if t.get("access") in ("no", "private"):
         return "no", False
+    if h == "footway" and t.get("footway") == "crossing":
+        return "yes", True  # crossing a road on a crosswalk
     if h in ROADS:
         return ("unknown", True) if h in ("trunk", "trunk_link") else ("yes", True)
     return defaults.get(h, "unknown"), True
