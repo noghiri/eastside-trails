@@ -1,6 +1,8 @@
 "use strict";
 
 const DEFAULT_CENTER = [47.6104, -122.2007]; // downtown Bellevue
+// cache-busting version from this script's own URL (index.html sets ?v=...), passed on to the worker
+const VERSION = new URL(document.currentScript.src).search;
 const MI = 1609.34, FT = 3.28084;
 // "on" (what you travel on) sets legality; "terrain" sets the surface preference; presets fill both
 const PRESETS = {
@@ -74,7 +76,7 @@ function init() {
 
 function load() {
   if (worker) worker.terminate();
-  worker = new Worker("router.js");
+  worker = new Worker(`router.js${VERSION}`);
   worker.onmessage = onWorker;
   worker.onerror = (e) => { $("#count").textContent = `Something went wrong: ${e.message}`; };
   rides = [];
