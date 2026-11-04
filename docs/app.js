@@ -205,12 +205,19 @@ function applyFilters(o) {
 const OLD_MODE = { e: "ebike", m: "mtb", h: "hike" };
 function parseHash() {
   const h = location.hash.slice(1);
-  if (h.startsWith("r=")) {
+  // filter-only links (no ride) may also set: min, max (mi), at=lat,lon, rad (mi), name (search label)
+  if (h.startsWith("r=") || h.startsWith("v=")) {
     const q = new URLSearchParams(h);
     const o = { grade: +q.get("g") || 4, walk: q.has("w"), walkMax: +q.get("w") || 200 };
     if (q.has("v")) Object.assign(o, { on: q.get("v"), terrain: q.get("t") || undefined });
     else Object.assign(o, { mode: OLD_MODE[q.get("m")] || "ebike", cls: +q.get("c") || 1, ebike: q.has("e") });
-    return { short: q.get("r"), o };
+    if (q.has("min")) o.min = +q.get("min");
+    if (q.has("max")) o.max = +q.get("max");
+    if (q.has("rad")) o.radius = Math.min(35, Math.max(1, +q.get("rad")));
+    const at = (q.get("at") || "").split(",").map(Number);
+    const link = { short: q.get("r") || undefined, o };
+    if (at.length === 2 && at.every(Number.isFinite)) { link.center = at; link.centerName = q.get("name") || "map point"; }
+    return link;
   }
   try { return JSON.parse(decodeURIComponent(h)); } catch (e) { return null; }
 }

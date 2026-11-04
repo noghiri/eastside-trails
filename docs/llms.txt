@@ -1,0 +1,37 @@
+# Eastside Trails
+
+> Ride and hike finder for the Seattle Eastside (Washington, USA). It generates out-and-back, loop, lollipop and one-way routes from parking points, checked against a grade limit using USGS lidar elevation and, on an e-bike, against the land manager's e-bike rules. Coverage: about 35 miles around Newcastle, WA; default search circle 30 miles around downtown Bellevue.
+
+Rides are generated in the browser by JavaScript (a web worker), so fetching the page HTML returns no rides. To get rides, give the user a link that opens the page with filters set (format below), or read the underlying data files.
+
+Link format, all parameters in the URL fragment after `#`, starting with `v=` or `r=`:
+
+- `v` what the person travels on (sets legality): `e1`, `e2`, `e3` (e-bike class), `bike` (no motor), `foot`
+- `t` terrain preference: `paved`, `groomed` (paved plus groomed gravel), `gravel` (mostly gravel), `dirt` (mostly dirt trail), `any`
+- `g` max sustained grade in percent over 100 m. The page offers three tiers plus any (`99`): 2/4/6 for bikes on paved or gravel, 6/10/15 for bikes on dirt, 8/15/25 on foot. Other values snap to the middle tier.
+- `w` allow short walk-ups over the grade limit, value = max length in meters (bikes only)
+- `min`, `max` route length in miles
+- `at` search center as `lat,lon`; `name` its label; `rad` radius in miles (1 to 35)
+- `r` a specific ride code. Codes are created by the page (Share button) and depend on the current map data build; don't construct them by hand.
+
+Example, easy class 1 e-bike rides of 3 to 8 miles around Issaquah: `https://noghiri.github.io/eastside-trails/#v=e1&t=groomed&g=4&min=3&max=8&at=47.5301,-122.0326&name=Issaquah&rad=10`
+
+Presets in the page: Easy ride = `v=e1&t=groomed&g=4`; Gravel ride = `v=e1&t=gravel`; Mountain bike = `v=bike&t=dirt&g=10`; E-MTB = `v=e1&t=dirt`; Hike = `v=foot&t=any&g=15`.
+
+E-bike rules applied by land manager (each ride lists the rules it used, with sources): King County land, class 1 and 2 only on regional trails and paved pathways (KCC 7.12.315); WA DNR, WDFW and US Forest Service land, only trails and roads open to motor vehicles; WA State Parks, class 1 and 3 on trails that allow bikes, class 2 on park roads only; elsewhere the state defaults in RCW 46.61.710 (class 1/2 allowed on shared-use paths, no e-bikes on nonmotorized natural-surface trails unless the agency allows). Where no rule can be determined the ride says "e-bike rules unknown".
+
+Caveats to pass on: parking points marked "unverified" were found automatically from OpenStreetMap; trail conditions and closures change, so check the linked agency page before going; paths with no access tags are assumed open except on golf courses, cemeteries, military land and airfields; elevation is 1 m lidar on bike paths and 10 m elsewhere (each ride says which).
+
+## Data
+
+- [Network index](https://noghiri.github.io/eastside-trails/net/index.json): tile list; `sources` (cited sources by key); `trails` (curated trails: managing authority and URL, surface summary, e-bike note, notes with kind closure/hazard/view/gap and a source key); code tables `flags` (bit 1 closed, 2 on-street, 4 dismount, 8 bridge), `surfaces` (index = code: paved, groomed, gravel, unknown, dirt), `access`, `agencies` (index = land manager code)
+- [Network tiles](https://noghiri.github.io/eastside-trails/net/t/476_-1222.json): one file per 0.1 degree, named `<floor(lat*10)>_<floor(lon*10)>.json`. `edges`: `n` name, `h` OSM highway, `c` path/road/join, `s` surface code, `bk`/`ft` bike/foot access (0 no, 1 yes, 2 dismount, 3 unknown), `ba` 1 if bike access is assumed, `ow` bike one-way (1 along geometry, -1 against, 0 both), `f` flag bits, `ag` land manager code, `mo` open to motor vehicles (1 yes, 0 no, 2 unknown), `rt` 1 on a King County regional trail, `L` length m, `g` geometry as Google encoded polyline (precision 1e-6), `e` elevation deltas in decimeters at `st` m spacing (first value absolute), `r` elevation resolution m. `access`: parking points (name, lat, lon, address or null, pass, source key, `verified`, `tier` likely/possible for automatic ones). `pois`: toilets, water, viewpoints, trailheads.
+
+## Docs
+
+- [README](https://github.com/noghiri/eastside-trails/blob/main/README.md): sources and licenses, how the data is built, known limitations
+- [Curated trail data](https://github.com/noghiri/eastside-trails/blob/main/data/curated.json): authority-sourced trailheads, closures, surfaces, e-bike notes, with source URLs and check dates
+
+## Optional
+
+- [Source code](https://github.com/noghiri/eastside-trails): pipeline (Python) and site (JavaScript); ride generation is in `docs/router.js`
