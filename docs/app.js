@@ -35,6 +35,10 @@ let ACCESS = [], INFO = null, rides = [], gen = 0, selectedCode = null;
 const PAGE = 100;
 let shown = PAGE;
 let center = DEFAULT_CENTER, centerName = "Bellevue";
+// "Rides from here": the list can be limited to rides starting at one parking lot or others close by
+const NEAR_M = 805; // half a mile
+let nearLot = null; // {lat, lon, name} of the chosen lot
+let view = []; // rides shown in the list (all, or only those near nearLot), sorted
 
 // ---------- setup ----------
 
@@ -78,6 +82,11 @@ function init() {
     centerName = "map point";
     load();
   });
+  // the "Rides from here" button lives in parking popups
+  map.on("popupopen", (ev) => {
+    ev.popup.getElement().querySelector(".near-btn")?.addEventListener("click", (e) => ridesNear(+e.currentTarget.dataset.k));
+  });
+  $("#nearClear").addEventListener("click", () => ridesNear(null));
   load();
 }
 
@@ -87,6 +96,8 @@ function load() {
   worker.onmessage = onWorker;
   worker.onerror = (e) => { $("#count").textContent = `Something went wrong: ${e.message}`; };
   rides = [];
+  nearLot = null;
+  $("#nearBar").hidden = true;
   $("#rides").innerHTML = "";
   $("#ride").hidden = true;
   rideLayer.clearLayers();
@@ -268,19 +279,21 @@ function renderList(progress) {
     long: (x, y) => y.length - x.length,
   };
   rides.sort(sorters[sort]);
-  $("#count").textContent = (rides.length
-    ? `${rides.length} ${word(rides.length)}. Distances are straight-line from ${centerName}.`
-    : progress ? "" : `No ${word(2)} match. Try a higher grade limit${isFoot() ? " or" : ","} a shorter minimum${isFoot() ? "" : ", or allowing walk-ups"}.`) +
+  view = nearLot ? rides.filter((r) => isNear(ACCESS[r.start])) : rides;
+  const where = nearLot ? ` from ${nearLot.name} or parking within ${(NEAR_M / MI).toFixed(1)} mi` : "";
+  $("#count").textContent = (view.length
+    ? `${view.length} ${word(view.length)}${where}. Distances are straight-line from ${centerName}.`
+    : progress ? "" : `No ${word(2)}${where} match. Try a higher grade limit${isFoot() ? " or" : ","} a shorter minimum${isFoot() ? "" : ", or allowing walk-ups"}.`) +
     (progress ? ` ${progress}` : "");
   const ol = $("#rides");
-  ol.innerHTML = rides.slice(0, shown).map((r, k) =>
+  ol.innerHTML = view.slice(0, shown).map((r, k) =>
     `<li tabindex="0" data-k="${k}" aria-selected="${r.code === selectedCode}">${rideSummary(r)}</li>`).join("") +
-    (rides.length > shown ? `<li class="more"><button type="button" class="btn ghost" id="moreBtn">Show more ${word(2)} (${rides.length - shown} more)</button></li>` : "");
+    (view.length > shown ? `<li class="more"><button type="button" class="btn ghost" id="moreBtn">Show more ${word(2)} (${view.length - shown} more)</button></li>` : "");
   $("#moreBtn")?.addEventListener("click", () => { shown += PAGE; renderList(); });
   drawParking();
   watchList();
   ol.querySelectorAll("li[data-k]").forEach((li) => {
-    const pick = () => select(rides[+li.dataset.k]);
+    const pick = () => select(view[+li.dataset.k]);
     li.addEventListener("click", pick);
     li.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(); } });
   });
@@ -366,17 +379,18 @@ function drawParking() {
     if (parkMarkers.has(k)) continue;
     const a = ACCESS[k];
     const m = L.circleMarker([a.lat, a.lon], { ...DOT, fillColor: a.verified ? "#2a78d6" : "#6b6a65" })
-      .bindPopup(parkingHtml(a)).bindTooltip(esc(a.name));
+      .bindPopup(parkingHtml(a, k)).bindTooltip(esc(a.name));
     parkMarkers.set(k, m.addTo(parkLayer));
   }
   styleParking();
 }
 
-/** Fade other parking while a ride is shown; enlarge the parking of the card at the top of the list. */
+/** Fade other parking while a ride is shown, or parking outside "Rides from here";
+ *  enlarge the parking of the card at the top of the list. */
 function styleParking() {
   const sel = selectedCode ? rides.find((r) => r.code === selectedCode)?.start : undefined;
   for (const [k, m] of parkMarkers) {
-    const faded = sel !== undefined && k !== sel;
+    const faded = sel !== undefined ? k !== sel : !!nearLot && !isNear(ACCESS[k]);
     const hl = k === highlighted;
     const a = ACCESS[k];
     m.setStyle({ fillOpacity: faded ? 0.25 : 1, opacity: faded ? 0.3 : 1, weight: hl ? 3 : DOT.weight,
@@ -403,7 +417,7 @@ function watchList() {
       const y = el.getBoundingClientRect().top;
       if (y >= edge && y < best) { best = y; top = el; }
     }
-    const k = top ? rides[+top.dataset.k]?.start : null;
+    const k = top ? view[+top.dataset.k]?.start : null;
     if (k === highlighted) return;
     highlighted = k;
     styleParking();
@@ -414,10 +428,34 @@ function watchList() {
   document.querySelectorAll("#rides li[data-k]").forEach((li) => listObserver.observe(li));
 }
 
+/** Rough ground distance in meters, fine at parking-lot scale. */
+function meters(a, b) {
+  const dy = (a.lat - b.lat) * 111320, dx = (a.lon - b.lon) * 111320 * Math.cos(a.lat * Math.PI / 180);
+  return Math.hypot(dx, dy);
+}
+
+const isNear = (a) => !!a && meters(a, nearLot) <= NEAR_M;
+
+/** Limit the list to rides starting at parking k or within NEAR_M of it; null shows all again. */
+function ridesNear(k) {
+  const a = k === null ? null : ACCESS[k];
+  nearLot = a ? { lat: a.lat, lon: a.lon, name: a.name } : null;
+  map.closePopup();
+  selectedCode = null;
+  $("#ride").hidden = true;
+  rideLayer.clearLayers();
+  $("#nearBar").hidden = !nearLot;
+  if (nearLot) $("#nearName").textContent = nearLot.name;
+  shown = PAGE;
+  renderList();
+  $(".list").scrollTop = 0;
+  if (window.matchMedia("(max-width: 800px)").matches) $(".list").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function select(r) {
   selectedCode = r.code;
   scrollToDetail = window.matchMedia("(max-width: 800px)").matches;
-  document.querySelectorAll("#rides li").forEach((li) => li.setAttribute("aria-selected", rides[+li.dataset.k]?.code === r.code));
+  document.querySelectorAll("#rides li").forEach((li) => li.setAttribute("aria-selected", view[+li.dataset.k]?.code === r.code));
   requestDetail({ c: r.code, shape: r.shape, why: r.why, end: r.end });
 }
 
@@ -485,7 +523,8 @@ function withSourceLinks(text) {
     keys.split(", ").every((k) => INFO.sources[k]) ? `(${keys.split(", ").map(srcLink).join(", ")})` : m);
 }
 
-function parkingHtml(a) {
+/** Parking popup; k (access index) adds the "Rides from here" button. */
+function parkingHtml(a, k) {
   const where = a.address
     ? `${esc(a.address)}${a.address_source ? ` <span class="muted">(address: ${srcLink(a.address_source)})</span>` : ""}`
     : `${a.lat.toFixed(5)}, ${a.lon.toFixed(5)} <span class="muted">(no published address)</span>`;
@@ -495,7 +534,8 @@ function parkingHtml(a) {
     ${where}<br>${pass}${a.capacity ? ` · ${esc(a.capacity)} spaces (OSM)` : ""}<br>
     ${a.notes ? `<span class="muted">${esc(a.notes)}</span><br>` : ""}
     <a href="https://www.google.com/maps/dir/?api=1&destination=${a.lat},${a.lon}" target="_blank" rel="noopener">Directions</a>
-    · Source: ${srcLink(a.source)}</div>`;
+    · Source: ${srcLink(a.source)}
+    ${k === undefined ? "" : `<br><button type="button" class="btn small near-btn" data-k="${k}">${isFoot() ? "Hikes" : "Rides"} from here</button>`}</div>`;
 }
 
 function trailInfoHtml(r) {

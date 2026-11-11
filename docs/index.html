@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Eastside Trails</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="style.css?v=202611111415">
+<link rel="stylesheet" href="style.css?v=202611111421">
 </head>
 <body>
 <header>
@@ -93,6 +93,7 @@
 
 <main>
   <section class="list" aria-label="Rides">
+    <p id="nearBar" class="near-bar" hidden>Starting near <strong id="nearName"></strong> <button type="button" class="btn small ghost" id="nearClear">Show all</button></p>
     <p id="count" class="muted" aria-live="polite">Loading map data…</p>
     <ol id="rides"></ol>
   </section>
@@ -112,6 +113,6 @@
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="app.js?v=202611111415"></script>
+<script src="app.js?v=202611111421"></script>
 </body>
 </html>
