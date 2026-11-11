@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Eastside Trails</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="style.css?v=202611111407">
+<link rel="stylesheet" href="style.css?v=202611111415">
 </head>
 <body>
 <header>
@@ -13,6 +13,8 @@
   <p class="sub">Rides and hikes from parking spots near you: out-and-backs, loops and one-ways, checked against your grade limit and, on an e-bike, the managing agency's e-bike rules.</p>
 </header>
 
+<details class="filter-panel" id="filterPanel" open>
+<summary><span class="fp-title">Filters</span> <span id="filterSummary"></span></summary>
 <section class="filters" aria-label="Ride filters">
   <fieldset>
     <legend>Preset</legend>
@@ -87,6 +89,7 @@
     </select>
   </fieldset>
 </section>
+</details>
 
 <main>
   <section class="list" aria-label="Rides">
@@ -109,6 +112,6 @@
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="app.js?v=202611111407"></script>
+<script src="app.js?v=202611111415"></script>
 </body>
 </html>

@@ -118,3 +118,14 @@ footer { color: var(--ink-2); font-size: .8rem; border-top: 1px solid var(--line
 .route-mark.start { border-color: #0ca30c; }
 .route-mark.turn { border-color: #eb6834; }
 .route-mark.finish { border-color: #0b0b0b; }
+/* filters: always open on desktop; a one-line collapsible bar on phones */
+.filter-panel > summary { display: none; }
+@media (max-width: 800px) {
+  .filter-panel > summary { display: block; cursor: pointer; list-style: none; padding: 8px 10px; margin-bottom: 8px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  .filter-panel > summary::-webkit-details-marker { display: none; }
+  .filter-panel > summary::before { content: "▸ "; color: var(--ink-2); }
+  .filter-panel[open] > summary::before { content: "▾ "; }
+  .fp-title { font-weight: 600; }
+  #filterSummary { color: var(--ink-2); font-size: .9rem; }
+}

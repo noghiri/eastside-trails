@@ -63,6 +63,10 @@ function init() {
     }));
   syncPreset();
   updateUI();
+  // filters start collapsed on phones, always open on wider screens
+  const phone = window.matchMedia("(max-width: 800px)");
+  $("#filterPanel").open = !phone.matches;
+  phone.addEventListener("change", (e) => { $("#filterPanel").open = !e.matches; });
   $("#pickCenter").addEventListener("click", () => {
     document.body.classList.add("picking");
     $("#count").textContent = "Click the map to set the search center.";
@@ -87,6 +91,7 @@ function load() {
   $("#ride").hidden = true;
   rideLayer.clearLayers();
   $("#centerName").textContent = centerName;
+  updateSummary();
   $("#count").textContent = "Loading map data…";
   worker.postMessage({ type: "load", center, radius: +$("#radius").value || 30 });
 }
@@ -136,6 +141,16 @@ function updateUI() {
   });
   $("#walkBox").hidden = isFoot();
   $("#avoidDismount").parentElement.hidden = isFoot();
+  updateSummary();
+}
+
+/** One-line description of the filters, shown on the collapsed bar on phones. */
+function updateSummary() {
+  const text = (sel) => sel.options[sel.selectedIndex]?.text.replace(/ \(.*\)$/, "") || "";
+  const preset = $("#preset").value === "custom" ? "Custom" : text($("#preset"));
+  const grade = gradeIndex() < 3 ? `≤${selectedGrade()}%` : "any grade";
+  $("#filterSummary").textContent = [preset, text($("#on")), text($("#surface")).toLowerCase(), grade,
+    `${$("#minLen").value}–${$("#maxLen").value} mi`, `${$("#radius").value} mi around ${centerName}`].join(" · ");
 }
 
 function applyPreset(name) {
