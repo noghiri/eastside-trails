@@ -56,9 +56,18 @@ legend { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .04em; c
 .checks label { display: block; }
 input, select { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
 
-main { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 16px; padding-block: 12px; }
+main { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); grid-template-rows: auto 1fr;
+  grid-template-areas: "list map" "list detail"; column-gap: 16px; padding-block: 12px; }
 main > * { min-width: 0; }
-@media (max-width: 800px) { main { grid-template-columns: minmax(0, 1fr); } .detail { order: -1; } }
+.list { grid-area: list; }
+.mapwrap { grid-area: map; }
+.detail { grid-area: detail; }
+/* phones: the map stays pinned on top while the list scrolls underneath */
+@media (max-width: 800px) {
+  main { grid-template-columns: minmax(0, 1fr); grid-template-areas: "map" "detail" "list"; }
+  .mapwrap { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 450; background: var(--page); padding-bottom: 8px; }
+  #ride { scroll-margin-top: calc(40vh + 24px); }
+}
 .list { max-height: calc(100vh - 220px); overflow-y: auto; }
 @media (max-width: 800px) { .list { max-height: none; } }
 #rides { list-style: none; margin: 0; padding: 0; }
@@ -75,7 +84,7 @@ main > * { min-width: 0; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
 
 #map { height: 420px; border-radius: 8px; border: 1px solid var(--line); }
-@media (max-width: 800px) { #map { height: 320px; } }
+@media (max-width: 800px) { #map { height: 40vh; } }
 #ride { margin-top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
 #ride h2 { margin: 0 0 4px; font-size: 1.15rem; }
 #ride h3 { margin: 14px 0 4px; font-size: .95rem; }

@@ -28,7 +28,9 @@ const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v
 const tierOf = (g) => TIERS.findIndex((t) => Math.abs(g) <= t);
 const tierColor = (k) => css(`--g${k + 1}`);
 
-let map, baseLayer, rideLayer, worker;
+let map, baseLayer, parkLayer, rideLayer, worker;
+const parkMarkers = new Map(); // access index -> circle marker, for parking that starts a listed ride
+let highlighted = null, listObserver = null, scrollToDetail = false;
 let ACCESS = [], INFO = null, rides = [], gen = 0, selectedCode = null;
 const PAGE = 100;
 let shown = PAGE;
@@ -42,6 +44,7 @@ function init() {
     maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
   }).addTo(map);
   baseLayer = L.layerGroup().addTo(map);
+  parkLayer = L.layerGroup().addTo(map);
   rideLayer = L.layerGroup().addTo(map);
   loadFilters();
   const link = parseHash();
@@ -225,6 +228,9 @@ function parseHash() {
 function generate() {
   gen++;
   shown = PAGE;
+  parkLayer?.clearLayers();
+  parkMarkers.clear();
+  selectedCode = null;
   rides = [];
   $("#rides").innerHTML = "";
   $("#ride").hidden = true;
@@ -256,6 +262,8 @@ function renderList(progress) {
     `<li tabindex="0" data-k="${k}" aria-selected="${r.code === selectedCode}">${rideSummary(r)}</li>`).join("") +
     (rides.length > shown ? `<li class="more"><button type="button" class="btn ghost" id="moreBtn">Show more ${word(2)} (${rides.length - shown} more)</button></li>` : "");
   $("#moreBtn")?.addEventListener("click", () => { shown += PAGE; renderList(); });
+  drawParking();
+  watchList();
   ol.querySelectorAll("li[data-k]").forEach((li) => {
     const pick = () => select(rides[+li.dataset.k]);
     li.addEventListener("click", pick);
@@ -330,14 +338,70 @@ function drawBase(closures) {
   L.circle(center, { radius: (+$("#radius").value || 30) * MI, color: "#6b6a65", weight: 1, fill: false, dashArray: "4 6", interactive: false }).addTo(baseLayer);
   for (const c of closures)
     L.polyline(c.g, { color: css("--critical"), weight: 5, dashArray: "6 6" }).bindTooltip(`Closed${c.n ? ": " + esc(c.n) : ""}`).addTo(baseLayer);
-  for (const a of ACCESS) {
-    const icon = L.divIcon({ className: `p-icon${a.verified ? "" : " unverified"}`, html: "P", iconSize: [18, 18] });
-    L.marker([a.lat, a.lon], { icon, title: a.name }).bindPopup(parkingHtml(a)).addTo(baseLayer);
+}
+
+// ---------- parking dots: only parking that starts a listed ride ----------
+
+const DOT = { radius: 5, weight: 1.5, color: "#fff", fillOpacity: 1, opacity: 1 };
+
+function drawParking() {
+  const want = new Set(rides.map((r) => r.start));
+  for (const [k, m] of parkMarkers) if (!want.has(k)) { parkLayer.removeLayer(m); parkMarkers.delete(k); }
+  for (const k of want) {
+    if (parkMarkers.has(k)) continue;
+    const a = ACCESS[k];
+    const m = L.circleMarker([a.lat, a.lon], { ...DOT, fillColor: a.verified ? "#2a78d6" : "#6b6a65" })
+      .bindPopup(parkingHtml(a)).bindTooltip(esc(a.name));
+    parkMarkers.set(k, m.addTo(parkLayer));
   }
+  styleParking();
+}
+
+/** Fade other parking while a ride is shown; enlarge the parking of the card at the top of the list. */
+function styleParking() {
+  const sel = selectedCode ? rides.find((r) => r.code === selectedCode)?.start : undefined;
+  for (const [k, m] of parkMarkers) {
+    const faded = sel !== undefined && k !== sel;
+    const hl = k === highlighted;
+    const a = ACCESS[k];
+    m.setStyle({ fillOpacity: faded ? 0.25 : 1, opacity: faded ? 0.3 : 1, weight: hl ? 3 : DOT.weight,
+      fillColor: hl ? "#eb6834" : a.verified ? "#2a78d6" : "#6b6a65" });
+    m.setRadius(hl ? 9 : DOT.radius);
+    if (hl) m.bringToFront();
+  }
+}
+
+/** Track which ride card is at the top of the list as it scrolls, and highlight its parking. */
+function watchList() {
+  listObserver?.disconnect();
+  const visible = new Map();
+  listObserver = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) visible.set(e.target, e.target.getBoundingClientRect().top);
+      else visible.delete(e.target);
+    }
+    // the first card whose top is in view (below the pinned map on phones)
+    const mobile = window.matchMedia("(max-width: 800px)").matches;
+    const edge = mobile ? $(".mapwrap").getBoundingClientRect().bottom - 10 : $(".list").getBoundingClientRect().top - 10;
+    let top = null, best = Infinity;
+    for (const [el] of visible) {
+      const y = el.getBoundingClientRect().top;
+      if (y >= edge && y < best) { best = y; top = el; }
+    }
+    const k = top ? rides[+top.dataset.k]?.start : null;
+    if (k === highlighted) return;
+    highlighted = k;
+    styleParking();
+    // keep the map on the selected ride; otherwise bring an off-screen highlighted parking into view
+    const m = parkMarkers.get(k);
+    if (!selectedCode && m && !map.getBounds().contains(m.getLatLng())) map.panTo(m.getLatLng());
+  }, { rootMargin: window.matchMedia("(max-width: 800px)").matches ? "-42% 0px 0px 0px" : "0px" });
+  document.querySelectorAll("#rides li[data-k]").forEach((li) => listObserver.observe(li));
 }
 
 function select(r) {
   selectedCode = r.code;
+  scrollToDetail = window.matchMedia("(max-width: 800px)").matches;
   document.querySelectorAll("#rides li").forEach((li) => li.setAttribute("aria-selected", rides[+li.dataset.k]?.code === r.code));
   requestDetail({ c: r.code, shape: r.shape, why: r.why, end: r.end });
 }
@@ -442,6 +506,7 @@ function steepHtml(r) {
 
 function showDetail(r) {
   selectedCode = r.code;
+  styleParking();
   if (r.short) history.replaceState(null, "", shareUrl(r));
   drawRide(r);
   const el = $("#ride");
@@ -470,6 +535,7 @@ function showDetail(r) {
     ${trailInfoHtml(r)}`;
   el.hidden = false;
   drawProfile(r, el.querySelector(".profile"), el.querySelector(".tip"));
+  if (scrollToDetail) { scrollToDetail = false; el.scrollIntoView({ behavior: "smooth", block: "start" }); }
   $("#gpxBtn").addEventListener("click", (ev) => { ev.preventDefault(); downloadGpx(r); });
   $("#shareBtn")?.addEventListener("click", () => shareRide(r));
 }
