@@ -8,7 +8,7 @@ const ROAD_WEIGHT = { living_street: 1.3, service: 1.5, residential: 1.5, unclas
   tertiary_link: 2.5, secondary: 4, secondary_link: 4, primary: 6, primary_link: 6, trunk: 10, trunk_link: 10 };
 const UNKNOWN_SURFACE_OK = new Set(["cycleway", "footway", "pedestrian"]); // usually paved when untagged
 const RES = 10, WIN = 10, APPROACH_M = 250, MIN_RIDE_M = 300, SHORT_LINK_M = 30, MAX_FAR_REPEAT_M = 60, LOOP_CLOSE_M = 200,
-  STEM_NEAR_M = 800, STEM_NEAR_SHARE = 0.25; // resample spacing (m), grade window in samples (100 m)
+  STEM_NEAR_M = 800, STEM_NEAR_SHARE = 0.25, TRAIL_REACH_M = 1600; // resample spacing (m), grade window in samples (100 m)
 
 let E = [];          // edges
 let nodeIdx = new Map(), NX = [], ADJ = []; // node id -> index, coords, adjacency [{k, dir}]
@@ -591,21 +591,54 @@ function ridesFrom(a, o) {
     `${E[h.k].id} ${E[h.k].h} "${E[h.k].n || ""}" s${E[h.k].s} bk${E[h.k].bk} f${E[h.k].f} ow${E[h.k].ow} g${E[h.k].maxG.toFixed(1)} L${E[h.k].L} ${usable(h.k, h.dir, o) ? "ok" : "blocked"}`).join("; "));
 
   // out-and-back: two-way edges only; greedy trail-following first, then a few random variants
+  const outBack = (out, stop) => {
+    const outLen = out.reduce((x, h) => x + E[h.k].L, 0);
+    let why = outLen >= maxM / 2 - 1 ? "length limit" : stop || "trail end";
+    let r = truncate(out, Math.min(outLen, maxM / 2));
+    const sm = samples(r);
+    const { ele } = resample({ D: sm.D, EL: sm.EL, K: sm.D.map(() => 0), total: sm.total });
+    const c = cutPoint(ele, o);
+    if (c) { r = truncate(r, c.cut * RES); why = c.why; }
+    const len = 2 * r.reduce((x, h) => x + (h.part ?? E[h.k].L), 0);
+    if (len < Math.max(minM, 300)) return;
+    // a turnaround back near the start is a lap ridden twice; the loop search covers it
+    const t = samples(r), turn = [t.LAT[t.LAT.length - 1], t.LON[t.LON.length - 1]];
+    if (haversine(turn, NX[s]) < Math.max(LOOP_CLOSE_M, 0.2 * len / 2)) return;
+    cands.push({ route: r.concat(reverseRoute(r)), shape: "out-and-back", why });
+  };
   if (o.shapes.outback) {
     for (const first of starts) {
       if (!usable(first.k, -first.dir, o)) continue;
       for (let t = 0; t < 3; t++) {
         const out = walk(s, first, o, maxM / 2, rng, t === 0, true);
-        let outLen = out.reduce((x, h) => x + E[h.k].L, 0);
-        let why = outLen >= maxM / 2 - 1 ? "length limit" : out.stop || "trail end";
-        let r = truncate(out, Math.min(outLen, maxM / 2));
-        const sm = samples(r);
-        const { ele } = resample({ D: sm.D, EL: sm.EL, K: sm.D.map(() => 0), total: sm.total });
-        const c = cutPoint(ele, o);
-        if (c) { r = truncate(r, c.cut * RES); why = c.why; }
-        const len = 2 * r.reduce((x, h) => x + (h.part ?? E[h.k].L), 0);
-        if (len < Math.max(minM, 300)) continue;
-        cands.push({ route: r.concat(reverseRoute(r)), shape: "out-and-back", why });
+        outBack(out, out.stop);
+      }
+    }
+    // in a park full of paths the walks above may never reach the trail people come for: ride to
+    // each named trail within reach, then out along it in both directions
+    const prev = shortestFrom(s, o, Math.min(TRAIL_REACH_M, maxM / 4));
+    const reach = new Map(); // trail name -> nearest node on it
+    const depth = new Map([[s, 0]]);
+    const depthOf = (n) => {
+      if (!depth.has(n)) { const [p, nx] = prev.get(n); depth.set(n, depthOf(p) + E[nx.k].L); }
+      return depth.get(n);
+    };
+    for (const n of [s, ...prev.keys()])
+      for (const h of ADJ[n]) {
+        const nm = E[h.k].n;
+        if (!nm || E[h.k].c !== "path") continue;
+        if (!reach.has(nm) || depthOf(n) < depthOf(reach.get(nm))) reach.set(nm, n);
+      }
+    for (const [nm, n] of reach) {
+      const lead = [];
+      for (let m = n; m !== s;) { const [p, nx] = prev.get(m); lead.push(nx); m = p; }
+      lead.reverse();
+      if (lead.some((h) => !usable(h.k, -h.dir, o))) continue;
+      const last = lead[lead.length - 1]?.k;
+      for (const first of ADJ[n]) {
+        if (E[first.k].n !== nm || first.k === last || !usable(first.k, first.dir, o) || !usable(first.k, -first.dir, o)) continue;
+        const along = walk(n, first, o, maxM / 2 - depthOf(n), rng, true, true);
+        outBack(lead.concat(along), along.stop);
       }
     }
   }
@@ -707,7 +740,12 @@ function ridesFrom(a, o) {
     for (let i = kept.length - 1; i >= 0; i--) if (jaccard(kept[i].edges, r.edges) > 0.7) kept.splice(i, 1);
     kept.push(r);
   }
-  return kept.sort((x, y) => y.score - x.score).slice(0, 6);
+  // up to eight per lot, best first; loops keep up to four places, other shapes four each
+  const isLoop = (r) => r.shape === "loop" || r.shape === "lollipop", per = {};
+  kept.sort((x, y) => y.score - x.score);
+  const loops = kept.filter(isLoop).slice(0, 4);
+  const rest = kept.filter((r) => !isLoop(r) && (per[r.shape] = (per[r.shape] || 0) + 1) <= 4);
+  return loops.concat(rest.slice(0, 8 - loops.length)).sort((x, y) => y.score - x.score);
 }
 
 function summary(r) {
